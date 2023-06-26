@@ -52,7 +52,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     let tls_config = Arc::new(server_config);
 
     let notary_address = SocketAddr::new(
-        IpAddr::V4(config.server.domain.parse().map_err(|err| {
+        IpAddr::V4(config.server.host.parse().map_err(|err| {
             eyre!("Failed to parse notary host address from server config: {err}")
         })?),
         config.server.port,
@@ -176,8 +176,8 @@ mod test {
     #[tokio::test]
     async fn test_load_notary_key_and_cert() {
         let config = TLSSignatureProperties {
-            private_key_pem_path: "./src/fixture/tls/notary.key".to_string(),
-            certificate_pem_path: "./src/fixture/tls/notary.crt".to_string(),
+            private_key_pem_path: "./fixture/tls/notary.key".to_string(),
+            certificate_pem_path: "./fixture/tls/notary.crt".to_string(),
         };
         let result: Result<(PrivateKey, Vec<Certificate>)> = load_tls_key_and_cert(&config).await;
         assert!(result.is_ok(), "Could not load tls private key and cert");
@@ -186,7 +186,7 @@ mod test {
     #[tokio::test]
     async fn test_load_notary_signing_key() {
         let config = NotarySignatureProperties {
-            private_key_pem_path: "./src/fixture/notary/notary.key".to_string(),
+            private_key_pem_path: "./fixture/notary/notary.key".to_string(),
         };
         let result: Result<SigningKey> = load_notary_signing_key(&config).await;
         assert!(result.is_ok(), "Could not load notary private key");

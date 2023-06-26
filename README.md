@@ -11,16 +11,59 @@ This project is currently under active development and should not be used in pro
 
 ---
 ## Running the server
-1. Configure the server setting in this [file](./config.yaml) — refer [here](./src/config.rs) for more information on the definition of the setting parameters.
-2. Start the server by running following in a terminal at the top level of this project.
+### Using Cargo
+1. Configure the server setting in this config [file](./config/config.yaml) — refer [here](./src/config.rs) for more information on the definition of the setting parameters.
+2. Start the server by running the following in a terminal at the root of this repository.
 ```bash
-cargo run
+cargo run --release
 ```
 3. To use a config file from a different location, run the following command to override the default config file location.
 ```bash
-cargo run -- --config-file <path-to-new-config-file>
+cargo run --release -- --config-file <path-of-new-config-file>
 ```
 
+### Using Docker
+There are two ways to obtain the notary server's Docker image:
+- [GitHub](#obtaining-the-image-via-github)
+- [Building from source](#building-from-source)
+
+#### GitHub
+1. Obtain the latest image with:
+```bash
+docker pull ghcr.io/tlsnotary/notary-server:latest
+```
+2. Run the docker container with:
+```bash
+docker run --init -p 127.0.0.1:7047:7047 ghcr.io/tlsnotary/notary-server:latest
+```
+3. If you want to change the default configuration, create a `config` folder locally, that contains a `config.yaml`, whose content follows the format of the default config file [here](./config/config.yaml).
+4. Instead of step 2, run the docker container with the following (remember to change the port mapping if you have changed that in the config):
+```bash
+docker run --init -p 127.0.0.1:7047:7047 -v <your config folder path>:/root/.notary-server/config ghcr.io/tlsnotary/notary-server:latest
+```
+
+#### Building from source
+1. Configure the server setting in this config [file](./config/config.yaml).
+2. Build the docker image by running the following in a terminal at the root of this repository.
+```bash
+docker build . -t notary-server:local
+```
+3. Run the docker container and specify the port specified in the config file, e.g. for the default port 7047
+```bash
+docker run --init -p 127.0.0.1:7047:7047 notary-server:local
+```
+
+### Using different key/cert for TLS or/and notarization with Docker
+1. Instead of changing the key/cert file path(s) in the config file, create a folder containing your key/cert by following the folder structure [here](./fixture/).
+2. When launching the docker container, mount your folder onto the docker container at the relevant path prefixed by `/root/.notary-server`.
+- Example 1: Using different key/cert for both TLS and notarization:
+```bash
+docker run --init -p 127.0.0.1:7047:7047 -v <your folder path>:/root/.notary-server/fixture notary-server:local
+```
+- Example 2: Using different key for notarization (your folder should only contain `notary.key`):
+```bash
+docker run --init -p 127.0.0.1:7047:7047 -v <your folder path>:/root/.notary-server/fixture/notary notary-server:local
+```
 ---
 ## API
 All APIs are TLS-protected, hence please use `https://` or `wss://`.
