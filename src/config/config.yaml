@@ -1,0 +1,3 @@
+signature:
+  private-key-pem-path: "../fixtures/notary.key"
+  certificate-pem-path: "../fixtures/notary.crt"
