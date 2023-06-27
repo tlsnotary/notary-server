@@ -1,3 +1,10 @@
+server:
+  host: "127.0.0.1"
+  port: 7047
+
 signature:
-  private-key-pem-path: "../fixtures/notary.key"
-  certificate-pem-path: "../fixtures/notary.crt"
+  private-key-pem-path: "./src/fixtures/notary.key"
+  certificate-pem-path: "./src/fixtures/notary.crt"
+
+logging:
+  default-level: DEBUG

@@ -2,6 +2,8 @@ use eyre::Report;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NotaryServerError {
-    #[error("Something wrong internally happened: {0}")]
-    Internal(#[from] Report),
+    #[error(transparent)]
+    Unexpected(#[from] Report),
+    #[error("Failed to connect to prover: {0}")]
+    ConnectionFailed(String),
 }
