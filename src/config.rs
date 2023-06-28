@@ -4,7 +4,8 @@ use serde::Deserialize;
 #[serde(rename_all = "kebab-case")]
 pub struct NotaryServerProperties {
     pub server: ServerProperties,
-    pub signature: SignatureProperties,
+    pub tls_signature: TLSSignatureProperties,
+    pub notary_signature: NotarySignatureProperties,
     pub logging: LoggingProperties,
 }
 
@@ -17,9 +18,15 @@ pub struct ServerProperties {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct SignatureProperties {
+pub struct TLSSignatureProperties {
     pub private_key_pem_path: String,
     pub certificate_pem_path: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct NotarySignatureProperties {
+    pub private_key_pem_path: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -9,6 +9,7 @@ edition = "2021"
 eyre = "0.6.8"
 futures-util = "0.3.28"
 log = "0.4.19"
+p256 = "0.13"
 rustls = { version = "0.21" }
 rustls-pemfile = { version = "1.0.2" }
 serde = { version = "1.0.147", features = ["derive"] }
@@ -16,5 +17,7 @@ serde_yaml = "0.9.21"
 simple_logger = "4.2.0"
 structopt = "0.3.26"
 thiserror = "1"
+tlsn-notary = { git = "https://github.com/tlsnotary/tlsn" }
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.24.1" }
+tokio-util = { version = "0.7", features = ["compat"] }
