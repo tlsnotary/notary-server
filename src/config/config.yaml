@@ -3,11 +3,11 @@ server:
   port: 7047
 
 tls-signature:
-  private-key-pem-path: "./src/fixtures/notary.key"
-  certificate-pem-path: "./src/fixtures/notary.crt"
+  private-key-pem-path: "./src/fixture/tls/notary.key"
+  certificate-pem-path: "./src/fixture/tls/notary.crt"
 
 notary-signature:
-  private-key-pem-path: "./src/fixtures/notaryEC.key"
+  private-key-pem-path: "./src/fixture/notary/notary.key"
 
 logging:
   default-level: DEBUG

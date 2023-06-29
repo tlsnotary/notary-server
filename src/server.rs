@@ -1,7 +1,10 @@
 use eyre::{ensure, eyre, Result};
 use futures_util::future::poll_fn;
 use log::{debug, error, info};
-use p256::ecdsa::{Signature, SigningKey};
+use p256::{
+    ecdsa::{Signature, SigningKey},
+    pkcs8::DecodePrivateKey,
+};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::{
     fs::File as StdFile,
@@ -23,10 +26,14 @@ use crate::{
     error::NotaryServerError,
 };
 
+/// Start a TLS-secured TCP server to accept notarization request
 pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
+    // Load the private key and cert needed for TLS connection from fixture folder — can be swapped out when we stop using static self signed cert
     let (tls_private_key, tls_certificates) = load_tls_key_and_cert(&config.tls_signature).await?;
+    // Load the private key for notarized transcript signing from fixture folder — can be swapped out when we use proper ephemeral signing key
     let notary_signing_key = load_notary_signing_key(&config.notary_signature).await?;
 
+    // Build a TCP listener with TLS enabled
     let tls_config = Arc::new(
         ServerConfig::builder()
             .with_safe_defaults()
@@ -56,6 +63,7 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
     );
 
     loop {
+        // Poll for any incoming connection constantly
         let (stream, prover_address) = match poll_fn(|cx| listener.poll_accept(cx)).await {
             Ok(connection) => connection,
             Err(err) => {
@@ -68,6 +76,7 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
         let acceptor = acceptor.clone();
         let notary_signing_key = notary_signing_key.clone();
 
+        // Spawn a new async task to handle the new connection
         tokio::spawn(async move {
             match acceptor.accept(stream).await {
                 Ok(stream) => {
@@ -92,6 +101,7 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
     }
 }
 
+/// Run the notarization
 async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'static>(
     socket: T,
     signing_key: &SigningKey,
@@ -101,6 +111,7 @@ async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'stati
     let config = NotaryConfig::builder().build()?;
     let (notary, notary_fut) = bind_notary(config, socket.compat())?;
 
+    // Spawn a new async task to run the background process
     tokio::spawn(notary_fut);
 
     notary.notarize::<Signature>(signing_key).await?;
@@ -109,31 +120,24 @@ async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'stati
     Ok(())
 }
 
-async fn read_pem_file(file_path: &str) -> Result<BufReader<StdFile>> {
-    let key_file = File::open(file_path).await?.into_std().await;
-    Ok(BufReader::new(key_file))
-}
-
+/// Temporary function to load notary signing key from static file
 async fn load_notary_signing_key(config: &NotarySignatureProperties) -> Result<SigningKey> {
     debug!("Loading notary server's signing key");
 
-    let mut private_key_file_reader = read_pem_file(&config.private_key_pem_path).await?;
-    let mut private_keys = rustls_pemfile::pkcs8_private_keys(&mut private_key_file_reader)
-        .map_err(|err| {
-            eyre!("Failed to read notary signing key pem file for notarization: {err}")
-        })?;
-
-    ensure!(
-        private_keys.len() == 1,
-        "More than 1 key found in the notary signing key pem file"
-    );
-    let notary_signing_key = SigningKey::from_slice(private_keys.remove(0).as_slice())
+    let notary_signing_key = SigningKey::read_pkcs8_pem_file(&config.private_key_pem_path)
         .map_err(|err| eyre!("Failed to load notary signing key for notarization: {err}"))?;
 
     debug!("Successfully loaded notary server's signing key!");
     Ok(notary_signing_key)
 }
 
+/// Read a PEM-formatted file and return its buffer reader
+async fn read_pem_file(file_path: &str) -> Result<BufReader<StdFile>> {
+    let key_file = File::open(file_path).await?.into_std().await;
+    Ok(BufReader::new(key_file))
+}
+
+/// Load notary tls private key and cert from static files
 async fn load_tls_key_and_cert(
     config: &TLSSignatureProperties,
 ) -> Result<(PrivateKey, Vec<Certificate>)> {
@@ -164,8 +168,8 @@ mod test {
     #[tokio::test]
     async fn test_load_notary_key_and_cert() {
         let config = TLSSignatureProperties {
-            private_key_pem_path: "./src/fixtures/notary.key".to_string(),
-            certificate_pem_path: "./src/fixtures/notary.crt".to_string(),
+            private_key_pem_path: "./src/fixture/tls/notary.key".to_string(),
+            certificate_pem_path: "./src/fixture/tls/notary.crt".to_string(),
         };
         let result: Result<(PrivateKey, Vec<Certificate>)> = load_tls_key_and_cert(&config).await;
         assert!(result.is_ok(), "Could not load tls private key and cert");
@@ -174,10 +178,9 @@ mod test {
     #[tokio::test]
     async fn test_load_notary_signing_key() {
         let config = NotarySignatureProperties {
-            private_key_pem_path: "./src/fixtures/notaryEC.key".to_string(),
+            private_key_pem_path: "./src/fixture/notary/notary.key".to_string(),
         };
         let result: Result<SigningKey> = load_notary_signing_key(&config).await;
-        println!("{:?}", result);
         assert!(result.is_ok(), "Could not load notary private key");
     }
 }
