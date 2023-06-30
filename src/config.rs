@@ -6,12 +6,13 @@ pub struct NotaryServerProperties {
     pub server: ServerProperties,
     pub tls_signature: TLSSignatureProperties,
     pub notary_signature: NotarySignatureProperties,
-    pub logging: LoggingProperties,
+    pub tracing: TracingProperties,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct ServerProperties {
+    pub name: String,
     pub host: String,
     pub port: u16,
 }
@@ -31,6 +32,6 @@ pub struct NotarySignatureProperties {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub struct LoggingProperties {
+pub struct TracingProperties {
     pub default_level: String,
 }

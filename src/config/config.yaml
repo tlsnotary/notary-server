@@ -1,4 +1,5 @@
 server:
+  name: "notary-server"
   host: "127.0.0.1"
   port: 7047
 
@@ -9,5 +10,5 @@ tls-signature:
 notary-signature:
   private-key-pem-path: "./src/fixture/notary/notary.key"
 
-logging:
+tracing:
   default-level: DEBUG

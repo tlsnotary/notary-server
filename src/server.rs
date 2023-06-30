@@ -1,6 +1,5 @@
 use eyre::{ensure, eyre, Result};
 use futures_util::future::poll_fn;
-use log::{debug, error, info};
 use p256::{
     ecdsa::{Signature, SigningKey},
     pkcs8::DecodePrivateKey,
@@ -20,6 +19,8 @@ use tokio::{
 };
 use tokio_rustls::TlsAcceptor;
 use tokio_util::compat::TokioAsyncReadCompatExt;
+use tracing::{debug, error, info};
+use uuid::Uuid;
 
 use crate::{
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
@@ -27,6 +28,7 @@ use crate::{
 };
 
 /// Start a TLS-secured TCP server to accept notarization request
+#[tracing::instrument(skip(config))]
 pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
     // Load the private key and cert needed for TLS connection from fixture folder — can be swapped out when we stop using static self signed cert
     let (tls_private_key, tls_certificates) = load_tls_key_and_cert(&config.tls_signature).await?;
@@ -71,7 +73,7 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
                 continue;
             }
         };
-        debug!("Received a prover's TCP connection from {}", prover_address);
+        debug!(?prover_address, "Received a prover's TCP connection");
 
         let acceptor = acceptor.clone();
         let notary_signing_key = notary_signing_key.clone();
@@ -81,8 +83,8 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
             match acceptor.accept(stream).await {
                 Ok(stream) => {
                     info!(
-                        "Accepted prover's TLS-secured TCP connection from {}",
-                        prover_address
+                        ?prover_address,
+                        "Accepted prover's TLS-secured TCP connection",
                     );
                     match notary_service(stream, &notary_signing_key).await {
                         Ok(_) => {
@@ -102,13 +104,15 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
 }
 
 /// Run the notarization
+#[tracing::instrument(skip(socket, signing_key))]
 async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'static>(
     socket: T,
     signing_key: &SigningKey,
 ) -> Result<(), NotaryServerError> {
     debug!("Starting notarization...");
 
-    let config = NotaryConfig::builder().build()?;
+    let session_id = Uuid::new_v4().to_string();
+    let config = NotaryConfig::builder().id(session_id).build()?;
     let (notary, notary_fut) = bind_notary(config, socket.compat())?;
 
     // Spawn a new async task to run the background process
