@@ -7,16 +7,22 @@ edition = "2021"
 
 [dependencies]
 eyre = "0.6.8"
+futures = "0.3"
 futures-util = "0.3.28"
+hyper = { version = "0.14", features = ["client", "http1"] }
 opentelemetry = { version = "0.19", features = ["rt-tokio"] }
 p256 = "0.13"
 rustls = { version = "0.21" }
 rustls-pemfile = { version = "1.0.2" }
 serde = { version = "1.0.147", features = ["derive"] }
+serde_json = "1.0"
 serde_yaml = "0.9.21"
 structopt = "0.3.26"
 thiserror = "1"
+tls-server-fixture = { git = "https://github.com/tlsnotary/tlsn" }
 tlsn-notary = { git = "https://github.com/tlsnotary/tlsn" }
+tlsn-prover = { git = "https://github.com/tlsnotary/tlsn" }
+tlsn-tls-core = { git = "https://github.com/tlsnotary/tlsn" }
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.24.1" }
 tokio-util = { version = "0.7", features = ["compat"] }
