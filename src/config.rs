@@ -38,6 +38,6 @@ pub struct NotarySignatureProperties {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct TracingProperties {
-    /// The minimum logging level, must be either of https://docs.rs/tracing/latest/tracing/struct.Level.html#implementations
+    /// The minimum logging level, must be either of <https://docs.rs/tracing/latest/tracing/struct.Level.html#implementations>
     pub default_level: String,
 }

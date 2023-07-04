@@ -29,12 +29,12 @@ jobs:
         run: cargo build
 
       - name: "Test"
-        run: cargo test --lib --bins --tests --examples --workspace
+        run: RUST_LOG=DEBUG cargo test --bins --tests --examples --workspace -- --nocapture
 
       - name: "Check documentation"
         # env:
         #   RUSTDOCFLAGS: -D warnings
-        run: cargo doc --no-deps --workspace --lib --document-private-items --examples
+        run: cargo doc --no-deps --workspace --document-private-items
 
   rustfmt:
     name: Rustfmt

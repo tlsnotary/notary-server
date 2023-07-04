@@ -114,7 +114,7 @@ async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'stati
 ) -> Result<(), NotaryServerError> {
     debug!("Starting notarization...");
 
-    // Use the prover address as the notarization session id as it is unique for each prover
+    // Temporarily use the prover address as the notarization session id as it is unique for each prover
     let config = NotaryConfig::builder().id(prover_address).build()?;
     let (notary, notary_fut) = bind_notary(config, socket.compat())?;
 
