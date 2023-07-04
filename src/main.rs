@@ -25,7 +25,7 @@ async fn main() -> Result<(), NotaryServerError> {
     // Set up tracing for logging
     init_tracing(&config).map_err(|err| eyre!("Failed to set up tracing: {err}"))?;
 
-    debug!("Config loaded: {:?}", config);
+    debug!(?config, "Server config loaded");
 
     // Run the tcp server
     run_tcp_server(&config).await?;

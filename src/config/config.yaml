@@ -1,6 +1,6 @@
 server:
   name: "notary-server"
-  host: "127.0.0.1"
+  domain: "127.0.0.1"
   port: 7047
 
 tls-signature:
