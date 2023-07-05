@@ -106,13 +106,12 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
 }
 
 /// Run the notarization
-#[tracing::instrument(skip(socket, signing_key))]
 async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'static>(
     socket: T,
     prover_address: &str,
     signing_key: &SigningKey,
 ) -> Result<(), NotaryServerError> {
-    debug!("Starting notarization...");
+    debug!(?prover_address, "Starting notarization...");
 
     // Temporarily use the prover address as the notarization session id as it is unique for each prover
     let config = NotaryConfig::builder().id(prover_address).build()?;
@@ -123,7 +122,7 @@ async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'stati
 
     notary.notarize::<Signature>(signing_key).await?;
 
-    debug!("Notarization completed successfully!");
+    debug!(?prover_address, "Notarization completed successfully!");
     Ok(())
 }
 
