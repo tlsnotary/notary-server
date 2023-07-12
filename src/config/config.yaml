@@ -1,0 +1,14 @@
+server:
+  name: "notary-server"
+  domain: "127.0.0.1"
+  port: 7047
+
+tls-signature:
+  private-key-pem-path: "./src/fixture/tls/notary.key"
+  certificate-pem-path: "./src/fixture/tls/notary.crt"
+
+notary-signature:
+  private-key-pem-path: "./src/fixture/notary/notary.key"
+
+tracing:
+  default-level: DEBUG
