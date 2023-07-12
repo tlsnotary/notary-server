@@ -117,13 +117,8 @@ async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'stati
     let config = NotaryConfig::builder().id(prover_address).build()?;
     let (notary, notary_fut) = bind_notary(config, socket.compat())?;
 
-    // Spawn a new async task to run the background process
-    tokio::spawn(notary_fut);
-
-    notary.notarize::<Signature>(signing_key).await?;
-
-    debug!(?prover_address, "Notarization completed successfully!");
-    Ok(())
+    // Run the notary and background processes concurrently
+    tokio::try_join!(notary_fut, notary.notarize::<Signature>(signing_key),).map(|_| Ok(()))?
 }
 
 /// Temporary function to load notary signing key from static file
@@ -350,5 +345,7 @@ mod test {
         prover.add_commitment_recv(0..recv_len as u32).unwrap();
 
         _ = prover.finalize().await.unwrap();
+
+        debug!("Done notarization!");
     }
 }
