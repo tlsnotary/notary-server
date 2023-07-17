@@ -1,20 +1,11 @@
-mod config;
-mod domain;
-mod error;
-mod server;
-mod server_tracing;
-mod util;
-
 use eyre::{eyre, Result};
 use structopt::StructOpt;
 use tracing::debug;
 
-use config::NotaryServerProperties;
-use domain::cli::CliFields;
-use error::NotaryServerError;
-use server::run_tcp_server;
-use server_tracing::init_tracing;
-use util::parse_config_file;
+use notary_server::{
+    init_tracing, parse_config_file, run_tcp_server, CliFields, NotaryServerError,
+    NotaryServerProperties,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), NotaryServerError> {
