@@ -13,8 +13,8 @@ use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::debug;
 
 use notary_server::{
-    read_pem_file, run_tcp_server, NotaryServerProperties, NotarySignatureProperties,
-    ServerProperties, TLSSignatureProperties, TracingProperties,
+    read_pem_file, run_server, NotaryServerProperties, NotarySignatureProperties, ServerProperties,
+    TLSSignatureProperties, TracingProperties,
 };
 
 const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
@@ -45,7 +45,7 @@ async fn test_notarization() {
 
     // Run the the notary server
     tokio::spawn(async move {
-        run_tcp_server(&config).await.unwrap();
+        run_server(&config).await.unwrap();
     });
 
     // Sleep for a while to allow notary server to finish set up and start listening

@@ -6,10 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+axum = { version = "0.6.18", features = ["ws"]}
 eyre = "0.6.8"
 futures = "0.3"
 futures-util = "0.3.28"
-hyper = { version = "0.14", features = ["client", "http1"] }
+hyper = { version = "0.14", features = ["client", "http1", "server"] }
 opentelemetry = { version = "0.19" }
 p256 = "0.13"
 rustls = { version = "0.21" }
@@ -26,6 +27,8 @@ tlsn-tls-core = { git = "https://github.com/tlsnotary/tlsn" }
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.24.1" }
 tokio-util = { version = "0.7", features = ["compat"] }
+tower = { version = "0.4.12", features = ["make"] }
 tracing = "0.1"
 tracing-opentelemetry = "0.19"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.4.1", features = ["v4", "fast-rng"] }
