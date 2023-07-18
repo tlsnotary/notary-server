@@ -1,5 +1,5 @@
 use axum::{
-    http::{Request, StatusCode},
+    http::{Request, StatusCode, header},
     response::{IntoResponse, Json},
     routing::{get, post},
     Extension, Router,
@@ -85,14 +85,18 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         .route(
             "/notarize",
             post(|tx: Extension<Sender<String>>| async move {
-                debug!("Sending ping message to trigger notarization.");
                 if let Err(err) = tx.try_send("ping".to_string()) {
                     return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
                 }
                 debug!("Sent ping message to trigger notarization.");
-                Json(NotarizationResponse {
-                    session_id: Uuid::new_v4().to_string(),
-                })
+                (
+                    StatusCode::OK,
+                    // Need to send close to signal client to close the http connection so that client will proceed to start notarization
+                    [(header::CONNECTION, "close")],
+                    Json(NotarizationResponse {
+                        session_id: Uuid::new_v4().to_string(),
+                    }),
+                )
                 .into_response()
             }),
         );
@@ -113,7 +117,11 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         let notary_signing_key = notary_signing_key.clone();
 
         let protocol = protocol.clone();
-        // Establish a channel for handler to trigger notarization
+        // Establish a channel for handler to trigger notarization — this is mainly because we are
+        // using the same port for all requests, e.g. notarization via raw TCP, WebSocket, and in order to
+        // start notarization on raw TCP after talking HTTP, we can only claim back the TLS socket at the server thread level
+        // instead of the handler level, hence the server thread needs to know when to notarize (if it's raw TCP) and
+        // when not to notarize (when it's WebSocket)
         let (tx, mut rx) = mpsc::channel::<String>(100);
         let mut app = router.clone().layer(Extension(tx)).into_make_service();
         let service = MakeService::<_, Request<hyper::Body>>::make_service(&mut app, &stream);
