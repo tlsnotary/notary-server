@@ -84,8 +84,8 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         .route("/healthcheck", get(|| async move { "Ok" }))
         .route(
             "/notarize",
-            post(|tx: Extension<Sender<String>>| async move {
-                if let Err(err) = tx.try_send("ping".to_string()) {
+            post(|tx: Extension<Sender<()>>| async move {
+                if let Err(err) = tx.try_send(()) {
                     return (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()).into_response();
                 }
                 debug!("Sent ping message to trigger notarization.");
@@ -122,7 +122,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         // start notarization on raw TCP after talking HTTP, we can only claim back the TLS socket at the server thread level
         // instead of the handler level, hence the server thread needs to know when to notarize (if it's raw TCP) and
         // when not to notarize (when it's WebSocket)
-        let (tx, mut rx) = mpsc::channel::<String>(100);
+        let (tx, mut rx) = mpsc::channel::<()>(100);
         let mut app = router.clone().layer(Extension(tx)).into_make_service();
         let service = MakeService::<_, Request<hyper::Body>>::make_service(&mut app, &stream);
 
