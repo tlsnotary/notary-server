@@ -4,6 +4,7 @@ mod error;
 mod server;
 mod server_tracing;
 mod util;
+mod websocket;
 
 pub use config::{
     NotaryServerProperties, NotarySignatureProperties, ServerProperties, TLSSignatureProperties,
