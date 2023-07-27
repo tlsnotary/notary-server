@@ -14,7 +14,7 @@ use tracing::debug;
 
 use notary_server::{
     read_pem_file, run_server, NotaryServerProperties, NotarySignatureProperties, ServerProperties,
-    TLSSignatureProperties, TracingProperties,
+    TLSSignatureProperties, TracingProperties, NotarizationResponse,
 };
 
 const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
@@ -123,12 +123,12 @@ async fn run_prover(notary_config: &NotaryServerProperties) {
 
     // Pretty printing :)
     let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
-    let parsed =
-        serde_json::from_str::<serde_json::Value>(&String::from_utf8_lossy(&payload)).unwrap();
+    let response =
+        serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
 
     debug!(
-        "Notarization response: {}",
-        serde_json::to_string_pretty(&parsed).unwrap()
+        "Notarization response: {:?}",
+        response,
     );
 
     // Claim back the TLS socket after HTTP exchange is done
@@ -148,7 +148,7 @@ async fn run_prover(notary_config: &NotaryServerProperties) {
 
     // Basic default prover config — use local address as the notarization session id
     let prover_config = ProverConfig::builder()
-        .id(prover_address)
+        .id(response.session_id)
         .server_dns(SERVER_DOMAIN)
         .root_cert_store(root_store)
         .build()
