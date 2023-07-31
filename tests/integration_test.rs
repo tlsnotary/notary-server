@@ -1,4 +1,4 @@
-use async_tungstenite::tokio::client_async;
+use async_tungstenite::tokio::connect_async_with_tls_connector;
 use futures::AsyncWriteExt;
 use hyper::{body::to_bytes, client::conn::Parts, Body, Request, StatusCode};
 use rustls::{Certificate, ClientConfig, RootCertStore};
@@ -20,6 +20,7 @@ use notary_server::{
 };
 
 const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
+const NOTARY_CA_CERT_BYTES: &[u8] = include_bytes!("../src/fixture/tls/rootCA.crt");
 
 async fn setup_config_and_server(sleep_ms: u64, port: u16) -> NotaryServerProperties {
     let notary_config = NotaryServerProperties {
@@ -219,46 +220,26 @@ async fn test_websocket_prover() {
     // Setup
     let notary_config = setup_config_and_server(100, 7049).await;
 
-    // Connect to the Notary via TLS-TCP
-    let mut certificate_file_reader = read_pem_file(NOTARY_CA_CERT_PATH).await.unwrap();
-    let mut certificates: Vec<Certificate> = rustls_pemfile::certs(&mut certificate_file_reader)
-        .unwrap()
-        .into_iter()
-        .map(Certificate)
-        .collect();
-    let certificate = certificates.remove(0);
-
-    let mut root_store = RootCertStore::empty();
-    root_store.add(&certificate).unwrap();
-
-    let client_notary_config = ClientConfig::builder()
-        .with_safe_defaults()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
-    let notary_connector = TlsConnector::from(Arc::new(client_notary_config));
+    // Connect to the Notary via Websocket
+    let certificate =
+        tokio_native_tls::native_tls::Certificate::from_pem(NOTARY_CA_CERT_BYTES).unwrap();
+    let notary_connector = tokio_native_tls::native_tls::TlsConnector::builder()
+        .add_root_certificate(certificate)
+        .use_sni(false)
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap();
 
     let notary_domain = notary_config.server.domain.clone();
     let notary_port = notary_config.server.port;
-    let notary_address = SocketAddr::new(IpAddr::V4(notary_domain.parse().unwrap()), notary_port);
-    let notary_socket = tokio::net::TcpStream::connect(notary_address)
-        .await
-        .unwrap();
-
-    let notary_tls_socket = notary_connector
-        .connect(
-            notary_config.server.name.as_str().try_into().unwrap(),
-            notary_socket,
-        )
-        .await
-        .unwrap();
-
-    // Upgrade the TLS connection to WebSocket
-    let (notary_ws_stream, _) = client_async(
+    let (notary_ws_stream, _) = connect_async_with_tls_connector(
         format!("wss://{notary_domain}:{notary_port}/ws-notarize"),
-        notary_tls_socket,
+        Some(notary_connector.into()),
     )
     .await
     .unwrap();
+
+    // Wrap the socket with the adapter so that we get AsyncRead and AsyncWrite implemented
     let notary_ws_socket = WsStream::new(notary_ws_stream);
 
     // Connect to the Server
