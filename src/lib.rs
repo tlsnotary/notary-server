@@ -1,16 +1,20 @@
+mod axum_websocket;
 mod config;
 mod domain;
 mod error;
 mod server;
 mod server_tracing;
+mod service;
 mod util;
-mod websocket;
 
 pub use config::{
-    NotaryServerProperties, NotarySignatureProperties, ServerProperties, TLSSignatureProperties,
-    TracingProperties,
+    NotarizationProperties, NotaryServerProperties, NotarySignatureProperties, ServerProperties,
+    TLSSignatureProperties, TracingProperties,
 };
-pub use domain::{cli::CliFields, notary::NotarizationResponse};
+pub use domain::{
+    cli::CliFields,
+    notary::{ClientType, NotarizationRequest, NotarizationResponse},
+};
 pub use error::NotaryServerError;
 pub use server::{read_pem_file, run_server};
 pub use server_tracing::init_tracing;

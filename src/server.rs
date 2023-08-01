@@ -1,26 +1,18 @@
-use async_trait::async_trait;
 use axum::{
-    extract::FromRequestParts,
     extract::State,
-    http::{header, Request, StatusCode},
-    response::{IntoResponse, Json, Response},
+    http::{Request, StatusCode},
+    response::{IntoResponse, Response},
     routing::{get, post},
     Router,
 };
 use eyre::{ensure, eyre, Result};
 use futures_util::future::poll_fn;
-use http::request::Parts;
-use hyper::{
-    server::{
-        accept::Accept,
-        conn::{AddrIncoming, Http},
-    },
-    upgrade::OnUpgrade,
+
+use hyper::server::{
+    accept::Accept,
+    conn::{AddrIncoming, Http},
 };
-use p256::{
-    ecdsa::{Signature, SigningKey},
-    pkcs8::DecodePrivateKey,
-};
+use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::{
     fs::File as StdFile,
@@ -29,46 +21,20 @@ use std::{
     pin::Pin,
     sync::Arc,
 };
-use tlsn_notary::{bind_notary, NotaryConfig};
-use tokio::{
-    fs::File,
-    io::{AsyncRead, AsyncWrite},
-    net::TcpListener,
-};
+
+use tokio::{fs::File, net::TcpListener};
 use tokio_rustls::TlsAcceptor;
-use tokio_util::compat::TokioAsyncReadCompatExt;
 use tower::MakeService;
 use tracing::{debug, error, info};
-use uuid::Uuid;
 use ws_stream_tungstenite::WsStream;
 
 use crate::{
+    axum_websocket::{WebSocket, WebSocketUpgrade},
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
-    domain::notary::NotarizationResponse,
+    domain::notary::NotarizationSetup,
     error::NotaryServerError,
-    websocket::{WebSocket, WebSocketUpgrade},
+    service::{notary_service, tcp::notarize},
 };
-
-struct RawTcpExtractor {
-    pub on_upgrade: OnUpgrade,
-}
-
-#[async_trait]
-impl<S> FromRequestParts<S> for RawTcpExtractor
-where
-    S: Send + Sync,
-{
-    type Rejection = (StatusCode, String);
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let on_upgrade = parts.extensions.remove::<OnUpgrade>().ok_or((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Something wrong when extracting raw TCP".to_string(),
-        ))?;
-
-        Ok(Self { on_upgrade })
-    }
-}
 
 /// Start a TLS-secured TCP server to accept notarization request
 #[tracing::instrument(skip(config))]
@@ -114,9 +80,12 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
             "/healthcheck",
             get(|| async move { (StatusCode::OK, "Ok").into_response() }),
         )
-        .route("/notarize", post(configuration_service))
+        .route("/notarize", post(notarize))
         .route("/ws-notarize", get(upgrade_websocket))
-        .with_state(notary_signing_key);
+        .with_state(NotarizationSetup {
+            notary_signing_key,
+            notarization_config: config.notarization.clone(),
+        });
     let mut app = router.into_make_service();
 
     loop {
@@ -162,56 +131,18 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     }
 }
 
-async fn configuration_service(
-    tcp_extractor: RawTcpExtractor,
-    State(notary_signing_key): State<SigningKey>,
-) -> Response {
-    debug!("Received request for configuration");
-
-    let prover_session_id = Uuid::new_v4().to_string();
-    let notary_session_id = prover_session_id.clone();
-
-    tokio::spawn(async move {
-        let stream = match tcp_extractor.on_upgrade.await {
-            Ok(upgraded) => upgraded,
-            Err(err) => {
-                error!("Something wrong with on_upgrade: {:?}", err);
-                return;
-            }
-        };
-        debug!("Successfully extracted tcp connection.");
-        match notary_service(stream, &notary_session_id, &notary_signing_key).await {
-            Ok(_) => {
-                info!("Successful notarization for raw tcp!");
-            }
-            Err(err) => {
-                error!("Failed notarization for raw tcp: {err}");
-            }
-        }
-    });
-    (
-        StatusCode::OK,
-        // Need to send close to signal client to close the http connection so that client will proceed to start notarization
-        [(header::CONNECTION, "close")],
-        Json(NotarizationResponse {
-            session_id: prover_session_id,
-        }),
-    )
-        .into_response()
-}
-
 async fn upgrade_websocket(
     ws: WebSocketUpgrade,
-    State(notary_signing_key): State<SigningKey>,
+    State(setup): State<NotarizationSetup>,
 ) -> Response {
     debug!("Received websocket request: {:?}", ws);
-    ws.on_upgrade(|socket| websocket_service(socket, notary_signing_key))
+    ws.on_upgrade(|socket| websocket_service(socket, setup.notary_signing_key))
 }
 
 async fn websocket_service(socket: WebSocket, notary_signing_key: SigningKey) {
     debug!("Upgraded to websocket connection");
     let stream = WsStream::new(socket.into_inner());
-    match notary_service(stream, "test-websocket", &notary_signing_key).await {
+    match notary_service(stream, &notary_signing_key, "test-websocket", None).await {
         Ok(_) => {
             info!("Successful notarization for websocket!");
         }
@@ -219,21 +150,6 @@ async fn websocket_service(socket: WebSocket, notary_signing_key: SigningKey) {
             error!("Failed notarization for websocket: {err}");
         }
     }
-}
-
-/// Run the notarization
-async fn notary_service<T: AsyncWrite + AsyncRead + Send + Unpin + 'static>(
-    socket: T,
-    session_id: &str,
-    signing_key: &SigningKey,
-) -> Result<(), NotaryServerError> {
-    debug!(?session_id, "Starting notarization...");
-
-    let config = NotaryConfig::builder().id(session_id).build()?;
-    let (notary, notary_fut) = bind_notary(config, socket.compat())?;
-
-    // Run the notary and background processes concurrently
-    tokio::try_join!(notary_fut, notary.notarize::<Signature>(signing_key),).map(|_| Ok(()))?
 }
 
 /// Temporary function to load notary signing key from static file

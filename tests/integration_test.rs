@@ -15,8 +15,9 @@ use tracing::debug;
 use ws_stream_tungstenite::WsStream;
 
 use notary_server::{
-    read_pem_file, run_server, NotarizationResponse, NotaryServerProperties,
-    NotarySignatureProperties, ServerProperties, TLSSignatureProperties, TracingProperties,
+    read_pem_file, run_server, NotarizationProperties, NotarizationRequest, NotarizationResponse,
+    NotaryServerProperties, NotarySignatureProperties, ServerProperties, TLSSignatureProperties,
+    TracingProperties,
 };
 
 const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
@@ -28,6 +29,9 @@ async fn setup_config_and_server(sleep_ms: u64, port: u16) -> NotaryServerProper
             name: "tlsnotaryserver.io".to_string(),
             domain: "127.0.0.1".to_string(),
             port,
+        },
+        notarization: NotarizationProperties {
+            max_transcript_size: 1 << 14,
         },
         tls_signature: TLSSignatureProperties {
             private_key_pem_path: "./src/fixture/tls/notary.key".to_string(),
@@ -106,13 +110,21 @@ async fn test_raw_prover() {
     let connection_task = tokio::spawn(connection.without_shutdown());
 
     // Build the HTTP request to fetch the DMs
+    let payload = serde_json::to_string(&NotarizationRequest {
+        client_type: notary_server::ClientType::Tcp,
+        max_transcript_size: Some(notary_config.notarization.max_transcript_size),
+    })
+    .unwrap();
     let request = Request::builder()
         .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
         .method("POST")
         .header("Host", notary_domain)
         .header("Connection", "Upgrade")
+        // Need to specify this upgrade header for server to extract tcp connection later
         .header("Upgrade", "TCP")
-        .body(Body::empty())
+        // Need to specify application/json for axum to parse it as json
+        .header("Content-Type", "application/json")
+        .body(Body::from(payload))
         .unwrap();
 
     debug!("Sending request");

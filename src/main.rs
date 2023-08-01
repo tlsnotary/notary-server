@@ -18,7 +18,7 @@ async fn main() -> Result<(), NotaryServerError> {
 
     debug!(?config, "Server config loaded");
 
-    // Run the tcp server
+    // Run the server
     run_server(&config).await?;
 
     Ok(())

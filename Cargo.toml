@@ -10,6 +10,7 @@ async-trait = "0.1.67"
 async-tungstenite = { version = "0.22.2", features = ["tokio-runtime", "tokio-native-tls"] }
 axum = { version = "0.6.18", features = ["ws"]}
 axum-core = "0.3.4"
+axum-macros = "0.3.8"
 base64 = "0.21.0"
 eyre = "0.6.8"
 futures = "0.3"
