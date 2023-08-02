@@ -1,5 +1,8 @@
+use std::{sync::Arc, collections::HashMap};
+
 use p256::ecdsa::SigningKey;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
 use crate::config::NotarizationProperties;
 
@@ -26,4 +29,5 @@ pub enum ClientType {
 pub struct NotarizationSetup {
     pub notary_signing_key: SigningKey,
     pub notarization_config: NotarizationProperties,
+    pub store: Arc<Mutex<HashMap<String, Option<usize>>>>,
 }

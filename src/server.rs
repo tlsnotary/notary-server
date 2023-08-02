@@ -19,10 +19,10 @@ use std::{
     io::BufReader,
     net::{IpAddr, SocketAddr},
     pin::Pin,
-    sync::Arc,
+    sync::Arc, collections::HashMap,
 };
 
-use tokio::{fs::File, net::TcpListener};
+use tokio::{fs::File, net::TcpListener, sync::Mutex};
 use tokio_rustls::TlsAcceptor;
 use tower::MakeService;
 use tracing::{debug, error, info};
@@ -75,6 +75,8 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     );
 
     let protocol = Arc::new(Http::new());
+
+    let store = Arc::new(Mutex::new(HashMap::<String, Option<usize>>::new()));
     let router = Router::new()
         .route(
             "/healthcheck",
@@ -85,6 +87,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         .with_state(NotarizationSetup {
             notary_signing_key,
             notarization_config: config.notarization.clone(),
+            store: Arc::clone(&store),
         });
     let mut app = router.into_make_service();
 
@@ -136,13 +139,13 @@ async fn upgrade_websocket(
     State(setup): State<NotarizationSetup>,
 ) -> Response {
     debug!("Received websocket request: {:?}", ws);
-    ws.on_upgrade(|socket| websocket_service(socket, setup.notary_signing_key))
+    ws.on_upgrade(|socket| websocket_service(socket, setup))
 }
 
-async fn websocket_service(socket: WebSocket, notary_signing_key: SigningKey) {
+async fn websocket_service(socket: WebSocket, setup: NotarizationSetup) {
     debug!("Upgraded to websocket connection");
     let stream = WsStream::new(socket.into_inner());
-    match notary_service(stream, &notary_signing_key, "test-websocket", None).await {
+    match notary_service(stream, &setup.notary_signing_key, "test-websocket", None).await {
         Ok(_) => {
             info!("Successful notarization for websocket!");
         }

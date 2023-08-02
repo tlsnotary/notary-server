@@ -67,6 +67,7 @@ pub async fn notarize(
     }
 
     let prover_session_id = Uuid::new_v4().to_string();
+    setup.store.lock().await.insert(prover_session_id.clone(), payload.max_transcript_size);
 
     if payload.client_type == ClientType::Tcp {
         debug!("Spawning notarization thread for tcp client");
@@ -103,11 +104,18 @@ pub async fn notarize(
                 }
             }
         });
+        return (
+            StatusCode::OK,
+            // Need to send close to signal tcp client to close the http connection so that client can extract the underlying tcp connection for notarization
+            [(header::CONNECTION, "Close")],
+            Json(NotarizationResponse {
+                session_id: prover_session_id,
+            }),
+        ).into_response();
     }
+    // Don't send close connection to websocket client so that they can reuse the same underlying tcp connection to establish websocket connection
     (
         StatusCode::OK,
-        // Need to send close to signal client to close the http connection so that client will proceed to start notarization
-        [(header::CONNECTION, "Close")],
         Json(NotarizationResponse {
             session_id: prover_session_id,
         }),
