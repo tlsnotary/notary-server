@@ -1,13 +1,11 @@
 use axum::{
-    extract::State,
     http::{Request, StatusCode},
-    response::{IntoResponse, Response},
+    response::IntoResponse,
     routing::{get, post},
     Router,
 };
 use eyre::{ensure, eyre, Result};
 use futures_util::future::poll_fn;
-
 use hyper::server::{
     accept::Accept,
     conn::{AddrIncoming, Http},
@@ -15,28 +13,27 @@ use hyper::server::{
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::{
+    collections::HashMap,
     fs::File as StdFile,
     io::BufReader,
     net::{IpAddr, SocketAddr},
     pin::Pin,
-    sync::Arc, collections::HashMap,
+    sync::Arc,
 };
 
 use tokio::{fs::File, net::TcpListener, sync::Mutex};
 use tokio_rustls::TlsAcceptor;
 use tower::MakeService;
 use tracing::{debug, error, info};
-use ws_stream_tungstenite::WsStream;
 
 use crate::{
-    axum_websocket::{WebSocket, WebSocketUpgrade},
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
     domain::notary::NotarizationSetup,
     error::NotaryServerError,
-    service::{notary_service, tcp::notarize},
+    service::{tcp::notarize, websocket::upgrade_websocket},
 };
 
-/// Start a TLS-secured TCP server to accept notarization request
+/// Start a TLS-secured TCP server to accept notarization request for both TCP and WebSocket clients
 #[tracing::instrument(skip(config))]
 pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
     // Load the private key and cert needed for TLS connection from fixture folder — can be swapped out when we stop using static self signed cert
@@ -87,7 +84,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         .with_state(NotarizationSetup {
             notary_signing_key,
             notarization_config: config.notarization.clone(),
-            store: Arc::clone(&store),
+            store,
         });
     let mut app = router.into_make_service();
 
@@ -131,27 +128,6 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
                 }
             }
         });
-    }
-}
-
-async fn upgrade_websocket(
-    ws: WebSocketUpgrade,
-    State(setup): State<NotarizationSetup>,
-) -> Response {
-    debug!("Received websocket request: {:?}", ws);
-    ws.on_upgrade(|socket| websocket_service(socket, setup))
-}
-
-async fn websocket_service(socket: WebSocket, setup: NotarizationSetup) {
-    debug!("Upgraded to websocket connection");
-    let stream = WsStream::new(socket.into_inner());
-    match notary_service(stream, &setup.notary_signing_key, "test-websocket", None).await {
-        Ok(_) => {
-            info!("Successful notarization for websocket!");
-        }
-        Err(err) => {
-            error!("Failed notarization for websocket: {err}");
-        }
     }
 }
 

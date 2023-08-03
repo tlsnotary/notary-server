@@ -1,6 +1,13 @@
-use async_tungstenite::tokio::connect_async_with_tls_connector;
+use async_tungstenite::{
+    tokio::connect_async_with_tls_connector_and_config, tungstenite::protocol::WebSocketConfig,
+};
 use futures::AsyncWriteExt;
-use hyper::{body::to_bytes, client::conn::Parts, Body, Request, StatusCode};
+use hyper::{
+    body::to_bytes,
+    client::{conn::Parts, HttpConnector},
+    Body, Client, Request, StatusCode,
+};
+use hyper_tls::HttpsConnector;
 use rustls::{Certificate, ClientConfig, RootCertStore};
 use std::{
     net::{IpAddr, SocketAddr},
@@ -101,7 +108,7 @@ async fn test_raw_prover() {
         .unwrap();
 
     // Attach the hyper HTTP client to the notary TLS connection to send notarization request via HTTP
-    // i.e. this can be used to show API key, set cipher suite, max transcript size and to obtain notarization session id
+    // i.e. this can be used to set max transcript size and to obtain notarization session id
     let (mut request_sender, connection) = hyper::client::conn::handshake(notary_tls_socket)
         .await
         .unwrap();
@@ -109,7 +116,7 @@ async fn test_raw_prover() {
     // Spawn the HTTP task to be run concurrently
     let connection_task = tokio::spawn(connection.without_shutdown());
 
-    // Build the HTTP request to fetch the DMs
+    // Build the HTTP request to configure notarization
     let payload = serde_json::to_string(&NotarizationRequest {
         client_type: notary_server::ClientType::Tcp,
         max_transcript_size: Some(notary_config.notarization.max_transcript_size),
@@ -139,10 +146,10 @@ async fn test_raw_prover() {
 
     // Pretty printing :)
     let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
-    let response =
+    let notarization_response =
         serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
 
-    debug!("Notarization response: {:?}", response,);
+    debug!("Notarization response: {:?}", notarization_response,);
 
     // Claim back the TLS socket after HTTP exchange is done
     let Parts {
@@ -159,9 +166,9 @@ async fn test_raw_prover() {
         .add(&tls_core::key::Certificate(CA_CERT_DER.to_vec()))
         .unwrap();
 
-    // Basic default prover config — use local address as the notarization session id
+    // Basic default prover config — use the responded session id from notary server
     let prover_config = ProverConfig::builder()
-        .id(response.session_id)
+        .id(notarization_response.session_id)
         .server_dns(SERVER_DOMAIN)
         .root_cert_store(root_store)
         .build()
@@ -231,22 +238,76 @@ async fn test_raw_prover() {
 async fn test_websocket_prover() {
     // Setup
     let notary_config = setup_config_and_server(100, 7049).await;
+    let notary_domain = notary_config.server.domain.clone();
+    let notary_port = notary_config.server.port;
 
-    // Connect to the Notary via Websocket
+    // Establish TLS parameters for connection later
     let certificate =
         tokio_native_tls::native_tls::Certificate::from_pem(NOTARY_CA_CERT_BYTES).unwrap();
-    let notary_connector = tokio_native_tls::native_tls::TlsConnector::builder()
+    let notary_tls_connector = tokio_native_tls::native_tls::TlsConnector::builder()
         .add_root_certificate(certificate)
         .use_sni(false)
         .danger_accept_invalid_certs(true)
         .build()
         .unwrap();
 
-    let notary_domain = notary_config.server.domain.clone();
-    let notary_port = notary_config.server.port;
-    let (notary_ws_stream, _) = connect_async_with_tls_connector(
-        format!("wss://{notary_domain}:{notary_port}/ws-notarize"),
-        Some(notary_connector.into()),
+    // Call the /notarize HTTP API to configure notarization and obtain session id
+    let mut hyper_http_connector = HttpConnector::new();
+    hyper_http_connector.enforce_http(false);
+    let mut hyper_tls_connector =
+        HttpsConnector::from((hyper_http_connector, notary_tls_connector.clone().into()));
+    hyper_tls_connector.https_only(true);
+    let https_client = Client::builder().build::<_, hyper::Body>(hyper_tls_connector);
+
+    // Build the HTTP request to configure notarization
+    let payload = serde_json::to_string(&NotarizationRequest {
+        client_type: notary_server::ClientType::Websocket,
+        max_transcript_size: Some(notary_config.notarization.max_transcript_size),
+    })
+    .unwrap();
+
+    let request = Request::builder()
+        .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
+        .method("POST")
+        .header("Host", notary_domain.clone())
+        // Need to specify application/json for axum to parse it as json
+        .header("Content-Type", "application/json")
+        .body(Body::from(payload))
+        .unwrap();
+
+    debug!("Sending request");
+
+    let response = https_client.request(request).await.unwrap();
+
+    debug!("Sent request");
+
+    assert!(response.status() == StatusCode::OK);
+
+    debug!("Response OK");
+
+    // Pretty printing :)
+    let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
+    let notarization_response =
+        serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
+
+    debug!("Notarization response: {:?}", notarization_response,);
+
+    // Connect to the Notary via TLS-Websocket
+    let request = http::Request::builder()
+        .uri(format!("wss://{notary_domain}:{notary_port}/ws-notarize"))
+        .header("Host", notary_domain.clone())
+        .header("Sec-WebSocket-Key", "GgoPQ/LuL2daXTeBvajYAA==")
+        .header("Sec-WebSocket-Version", "13")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "Websocket")
+        .header("X-Session-Id", notarization_response.session_id.clone())
+        .body(())
+        .unwrap();
+
+    let (notary_ws_stream, _) = connect_async_with_tls_connector_and_config(
+        request,
+        Some(notary_tls_connector.into()),
+        Some(WebSocketConfig::default()),
     )
     .await
     .unwrap();
@@ -263,9 +324,9 @@ async fn test_websocket_prover() {
         .add(&tls_core::key::Certificate(CA_CERT_DER.to_vec()))
         .unwrap();
 
-    // Basic default prover config — use local address as the notarization session id
+    // Basic default prover config — use the responded session id from notary server
     let prover_config = ProverConfig::builder()
-        .id("test-websocket")
+        .id(notarization_response.session_id)
         .server_dns(SERVER_DOMAIN)
         .root_cert_store(root_store)
         .build()

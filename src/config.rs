@@ -18,6 +18,7 @@ pub struct NotaryServerProperties {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct NotarizationProperties {
+    /// Global maximum limit for maximum transcript size in bytes
     pub max_transcript_size: usize,
 }
 

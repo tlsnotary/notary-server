@@ -15,6 +15,11 @@ use crate::{
     NotaryServerError,
 };
 
+/// Custom extractor used to extract underlying TCP connection for TCP client — using the same upgrade primitives used by
+/// the WebSocket implementation where the underlying IO wrapped in an Upgrade object only gets polled as an OnUpgrade future
+/// after the ongoing HTTP request is finished (ref: https://github.com/tokio-rs/axum/blob/a6a849bb5b96a2f641fa077fe76f70ad4d20341c/axum/src/extract/ws.rs#L122)
+///
+/// More info on the upgrade primitives: https://docs.rs/hyper/latest/hyper/upgrade/index.html
 pub struct RawTcpExtractor {
     pub on_upgrade: OnUpgrade,
 }
@@ -32,17 +37,17 @@ where
                 .extensions
                 .remove::<OnUpgrade>()
                 .ok_or(NotaryServerError::BadProverRequest(
-                    "Connection header is not set to 'Upgrade' or Upgrade header is not set"
-                        .to_string(),
+                    "Upgrade header is not set".to_string(),
                 ))?;
 
         Ok(Self { on_upgrade })
     }
 }
 
+/// Handler to configure notarization for both TCP and WebSocket clients, as well as to start notarization for TCP client
 #[debug_handler(state = NotarizationSetup)]
 pub async fn notarize(
-    tcp_extractor: RawTcpExtractor,
+    tcp_extractor: Option<RawTcpExtractor>,
     State(setup): State<NotarizationSetup>,
     payload: Result<Json<NotarizationRequest>, JsonRejection>,
 ) -> impl IntoResponse {
@@ -51,13 +56,14 @@ pub async fn notarize(
     let payload = match payload {
         Ok(payload) => payload,
         Err(err) => {
+            error!("Malformed payload submitted for notarization: {err}");
             return NotaryServerError::BadProverRequest(err.to_string()).into_response();
         }
     };
 
     if payload.max_transcript_size > Some(setup.notarization_config.max_transcript_size) {
         error!(
-            "Max transcript size requested {:?} exceeds the maximum threshold {}",
+            "Max transcript size requested {:?} exceeds the maximum threshold {:?}",
             payload.max_transcript_size, setup.notarization_config.max_transcript_size
         );
         return NotaryServerError::BadProverRequest(
@@ -67,10 +73,27 @@ pub async fn notarize(
     }
 
     let prover_session_id = Uuid::new_v4().to_string();
-    setup.store.lock().await.insert(prover_session_id.clone(), payload.max_transcript_size);
+    setup
+        .store
+        .lock()
+        .await
+        .insert(prover_session_id.clone(), payload.max_transcript_size);
+
+    debug!("Latest store state: {:?}", setup.store);
 
     if payload.client_type == ClientType::Tcp {
-        debug!("Spawning notarization thread for tcp client");
+        let tcp_extractor = match tcp_extractor {
+            Some(extractor) => extractor,
+            None => {
+                let err_msg = "Upgrade header is not set for TCP client".to_string();
+                error!(err_msg);
+                return NotaryServerError::BadProverRequest(err_msg).into_response();
+            }
+        };
+        debug!(
+            ?prover_session_id,
+            "Spawning notarization thread for tcp client"
+        );
         let notary_session_id = prover_session_id.clone();
 
         tokio::spawn(async move {
@@ -111,7 +134,8 @@ pub async fn notarize(
             Json(NotarizationResponse {
                 session_id: prover_session_id,
             }),
-        ).into_response();
+        )
+            .into_response();
     }
     // Don't send close connection to websocket client so that they can reuse the same underlying tcp connection to establish websocket connection
     (

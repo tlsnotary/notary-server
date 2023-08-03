@@ -16,7 +16,7 @@ eyre = "0.6.8"
 futures = "0.3"
 futures-util = "0.3.28"
 http = "0.2.9"
-hyper = { version = "0.14", features = ["client", "http1", "server"] }
+hyper = { version = "0.14", features = ["client", "http1", "server", "tcp"] }
 opentelemetry = { version = "0.19" }
 p256 = "0.13"
 rustls = { version = "0.21" }
@@ -40,6 +40,7 @@ uuid = { version = "1.4.1", features = ["v4", "fast-rng"] }
 ws_stream_tungstenite = { version = "0.10.0", features = ["tokio_io"] }
 
 [dev-dependencies]
+hyper-tls = "0.5.0"
 tls-server-fixture = { git = "https://github.com/tlsnotary/tlsn" }
 tlsn-prover = { git = "https://github.com/tlsnotary/tlsn" }
 tokio-native-tls = "0.3.1"
