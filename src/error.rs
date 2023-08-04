@@ -31,6 +31,7 @@ impl From<NotaryConfigBuilderError> for NotaryServerError {
     }
 }
 
+/// Trait implementation to convert this error into an axum http response
 impl IntoResponse for NotaryServerError {
     fn into_response(self) -> Response {
         match self {

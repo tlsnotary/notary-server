@@ -6,7 +6,7 @@ use axum::{
 };
 use axum_macros::debug_handler;
 use hyper::upgrade::OnUpgrade;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// Custom extractor used to extract underlying TCP connection for TCP client — using the same upgrade primitives used by
-/// the WebSocket implementation where the underlying IO wrapped in an Upgrade object only gets polled as an OnUpgrade future
+/// the WebSocket implementation where the underlying TCP connection (wrapped in an Upgraded object) only gets polled as an OnUpgrade future
 /// after the ongoing HTTP request is finished (ref: https://github.com/tokio-rs/axum/blob/a6a849bb5b96a2f641fa077fe76f70ad4d20341c/axum/src/extract/ws.rs#L122)
 ///
 /// More info on the upgrade primitives: https://docs.rs/hyper/latest/hyper/upgrade/index.html
@@ -37,7 +37,7 @@ where
                 .extensions
                 .remove::<OnUpgrade>()
                 .ok_or(NotaryServerError::BadProverRequest(
-                    "Upgrade header is not set".to_string(),
+                    "Upgrade header is not set for TCP client".to_string(),
                 ))?;
 
         Ok(Self { on_upgrade })
@@ -53,6 +53,7 @@ pub async fn notarize(
 ) -> impl IntoResponse {
     info!(?payload, "Received request for notarization");
 
+    // Parse the body payload
     let payload = match payload {
         Ok(payload) => payload,
         Err(err) => {
@@ -61,6 +62,7 @@ pub async fn notarize(
         }
     };
 
+    // Ensure that the max_transcript_size submitted is not larger than the global max limit configured in notary server
     if payload.max_transcript_size > Some(setup.notarization_config.max_transcript_size) {
         error!(
             "Max transcript size requested {:?} exceeds the maximum threshold {:?}",
@@ -73,14 +75,16 @@ pub async fn notarize(
     }
 
     let prover_session_id = Uuid::new_v4().to_string();
+    // Store the configuration data in a temporary store, currently mainly used for websocket clients
     setup
         .store
         .lock()
         .await
         .insert(prover_session_id.clone(), payload.max_transcript_size);
 
-    debug!("Latest store state: {:?}", setup.store);
+    trace!("Latest store state: {:?}", setup.store);
 
+    // Start the notarization process using underlying TCP connection if the request comes from a TCP client
     if payload.client_type == ClientType::Tcp {
         let tcp_extractor = match tcp_extractor {
             Some(extractor) => extractor,
@@ -97,6 +101,7 @@ pub async fn notarize(
         let notary_session_id = prover_session_id.clone();
 
         tokio::spawn(async move {
+            // Poll the OnUpgrade object to obtain the underlying TCP connection wrapped in Upgraded
             let stream = match tcp_extractor.on_upgrade.await {
                 Ok(upgraded) => upgraded,
                 Err(err) => {

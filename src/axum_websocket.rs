@@ -1,7 +1,8 @@
 #![allow(unused)]
 
 //! Modified from https://github.com/tokio-rs/axum/blob/main/axum/src/extract/ws.rs
-//! where we swapped out tokio_tungstenite with async_tungstenite so that we can use
+//! where we swapped out tokio_tungstenite (https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/) 
+//! with async_tungstenite (https://docs.rs/async-tungstenite/latest/async_tungstenite/) so that we can use
 //! ws_stream_tungstenite (https://docs.rs/ws_stream_tungstenite/latest/ws_stream_tungstenite/index.html)
 //! to get AsyncRead and AsyncWrite implemented for the WebSocket
 //!

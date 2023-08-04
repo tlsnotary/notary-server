@@ -22,6 +22,7 @@ pub async fn upgrade_websocket(
     State(setup): State<NotarizationSetup>,
 ) -> Response {
     info!("Received websocket request: {:?}", ws);
+    // Extract the session_id from the headers
     let session_id = match headers.remove("X-Session-Id") {
         Some(session_id) => match session_id.to_str() {
             Ok(session_id) => session_id.to_string(),
@@ -37,6 +38,7 @@ pub async fn upgrade_websocket(
             return NotaryServerError::BadProverRequest(err_msg).into_response();
         }
     };
+    // Fetch the configuration data from the store using the session_id
     let max_transcript_size = match setup.store.lock().await.get(&session_id) {
         Some(max_transcript_size) => max_transcript_size.to_owned(),
         None => {
@@ -45,11 +47,11 @@ pub async fn upgrade_websocket(
             return NotaryServerError::BadProverRequest(err_msg).into_response();
         }
     };
-
+    // This completes the HTTP Upgrade request and returns a successful response to the client, meanwhile initiating the websocket connection
     ws.on_upgrade(move |socket| websocket_notarize(socket, setup, session_id, max_transcript_size))
 }
 
-/// Pass the established websocket connection to the notary_service
+/// Perform notarization using the established websocket connection
 async fn websocket_notarize(
     socket: WebSocket,
     setup: NotarizationSetup,
@@ -57,6 +59,7 @@ async fn websocket_notarize(
     max_transcript_size: Option<usize>,
 ) {
     debug!(?session_id, "Upgraded to websocket connection");
+    // Wrap the websocket in WsStream so that we have AsyncRead and AsyncWrite implemented
     let stream = WsStream::new(socket.into_inner());
     match notary_service(
         stream,

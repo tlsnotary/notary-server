@@ -72,7 +72,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     );
 
     let protocol = Arc::new(Http::new());
-
+    // A temporary storage to store configuration data, mainly used for WebSocket client
     let store = Arc::new(Mutex::new(HashMap::<String, Option<usize>>::new()));
     let router = Router::new()
         .route(
@@ -112,7 +112,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
                         ?prover_address,
                         "Accepted prover's TLS-secured TCP connection",
                     );
-
+                    // Serve different requests using the same hyper protocol and axum router
                     let _ = protocol
                         // Can unwrap because it's infallible
                         .serve_connection(stream, service.await.unwrap())

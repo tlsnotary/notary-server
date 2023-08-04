@@ -56,7 +56,7 @@ async fn setup_config_and_server(sleep_ms: u64, port: u16) -> NotaryServerProper
 
     let config = notary_config.clone();
 
-    // Run the the notary server
+    // Run the notary server
     tokio::spawn(async move {
         run_server(&config).await.unwrap();
     });
@@ -68,8 +68,8 @@ async fn setup_config_and_server(sleep_ms: u64, port: u16) -> NotaryServerProper
 }
 
 #[tokio::test]
-async fn test_raw_prover() {
-    // Setup
+async fn test_tcp_prover() {
+    // Notary server configuration setup
     let notary_config = setup_config_and_server(100, 7048).await;
 
     // Connect to the Notary via TLS-TCP
@@ -107,8 +107,9 @@ async fn test_raw_prover() {
         .await
         .unwrap();
 
-    // Attach the hyper HTTP client to the notary TLS connection to send notarization request via HTTP
-    // i.e. this can be used to set max transcript size and to obtain notarization session id
+    // Attach the hyper HTTP client to the notary TLS connection to send notarization request via HTTP to the /notarize endpoint
+    // 1. Use HTTP to send configuration data e.g. max transcript size and obtain notarization session id from server
+    // 2. Use underlying TCP connection to perform notarization
     let (mut request_sender, connection) = hyper::client::conn::handshake(notary_tls_socket)
         .await
         .unwrap();
@@ -151,7 +152,7 @@ async fn test_raw_prover() {
 
     debug!("Notarization response: {:?}", notarization_response,);
 
-    // Claim back the TLS socket after HTTP exchange is done
+    // Claim back the TCP socket after HTTP exchange is done so that client can use it for notarization
     let Parts {
         io: notary_tls_socket,
         ..
@@ -236,12 +237,12 @@ async fn test_raw_prover() {
 
 #[tokio::test]
 async fn test_websocket_prover() {
-    // Setup
+    // Notary server configuration setup
     let notary_config = setup_config_and_server(100, 7049).await;
     let notary_domain = notary_config.server.domain.clone();
     let notary_port = notary_config.server.port;
 
-    // Establish TLS parameters for connection later
+    // Establish TLS setup for connections later
     let certificate =
         tokio_native_tls::native_tls::Certificate::from_pem(NOTARY_CA_CERT_BYTES).unwrap();
     let notary_tls_connector = tokio_native_tls::native_tls::TlsConnector::builder()
@@ -296,10 +297,12 @@ async fn test_websocket_prover() {
     let request = http::Request::builder()
         .uri(format!("wss://{notary_domain}:{notary_port}/ws-notarize"))
         .header("Host", notary_domain.clone())
-        .header("Sec-WebSocket-Key", "GgoPQ/LuL2daXTeBvajYAA==")
+        .header("Sec-WebSocket-Key", uuid::Uuid::new_v4().to_string())
         .header("Sec-WebSocket-Version", "13")
         .header("Connection", "Upgrade")
         .header("Upgrade", "Websocket")
+        // Need to specify the session_id so that notary server knows the right configuration to use
+        // as the configuration is set in the previous HTTP call
         .header("X-Session-Id", notarization_response.session_id.clone())
         .body(())
         .unwrap();

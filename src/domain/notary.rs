@@ -26,7 +26,7 @@ pub struct NotarizationRequest {
 /// Types of client that the prover is using
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum ClientType {
-    /// Any program that have access to the transport layer
+    /// Client that has access to the transport layer
     Tcp,
     /// Client that cannot directly access transport layer, e.g. browser extension
     Websocket,
