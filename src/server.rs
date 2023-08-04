@@ -48,7 +48,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         .with_single_cert(tls_certificates, tls_private_key)
         .map_err(|err| eyre!("Failed to instantiate notary server tls config: {err}"))?;
 
-    // Set the http protocols we support to upgrade to
+    // Set the http protocols we support
     server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let tls_config = Arc::new(server_config);
 
@@ -116,6 +116,8 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
                     let _ = protocol
                         // Can unwrap because it's infallible
                         .serve_connection(stream, service.await.unwrap())
+                        // use with_upgrades to upgrade connection to websocket for websocket clients
+                        // and to extract tcp connection for tcp clients
                         .with_upgrades()
                         .await;
                 }

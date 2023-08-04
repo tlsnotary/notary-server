@@ -242,6 +242,9 @@ async fn test_websocket_prover() {
     let notary_domain = notary_config.server.domain.clone();
     let notary_port = notary_config.server.port;
 
+    // Connect to the notary server via TLS-WebSocket
+    // Try to avoid dealing with transport layer directly to mimic the limitation of a browser extension that uses websocket
+    //
     // Establish TLS setup for connections later
     let certificate =
         tokio_native_tls::native_tls::Certificate::from_pem(NOTARY_CA_CERT_BYTES).unwrap();
@@ -294,6 +297,11 @@ async fn test_websocket_prover() {
     debug!("Notarization response: {:?}", notarization_response,);
 
     // Connect to the Notary via TLS-Websocket
+    //
+    // Note: This will establish a new TLS-TCP connection instead of reusing the previous TCP connection
+    // used in the previous HTTP POST request because we cannot claim back the tcp connection used in hyper
+    // client while using its high level request function — there does not seem to have a crate that can let you
+    // make a request without establishing TCP connection where you can claim the TCP connection later after making the request
     let request = http::Request::builder()
         .uri(format!("wss://{notary_domain}:{notary_port}/ws-notarize"))
         .header("Host", notary_domain.clone())

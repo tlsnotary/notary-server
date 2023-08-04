@@ -20,12 +20,12 @@ use crate::{
 /// after the ongoing HTTP request is finished (ref: https://github.com/tokio-rs/axum/blob/a6a849bb5b96a2f641fa077fe76f70ad4d20341c/axum/src/extract/ws.rs#L122)
 ///
 /// More info on the upgrade primitives: https://docs.rs/hyper/latest/hyper/upgrade/index.html
-pub struct RawTcpExtractor {
+pub struct TcpConnectionExtractor {
     pub on_upgrade: OnUpgrade,
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for RawTcpExtractor
+impl<S> FromRequestParts<S> for TcpConnectionExtractor
 where
     S: Send + Sync,
 {
@@ -44,10 +44,10 @@ where
     }
 }
 
-/// Handler to configure notarization for both TCP and WebSocket clients, as well as to start notarization for TCP client
+/// Handler to configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
 #[debug_handler(state = NotarizationSetup)]
 pub async fn notarize(
-    tcp_extractor: Option<RawTcpExtractor>,
+    tcp_extractor: Option<TcpConnectionExtractor>,
     State(setup): State<NotarizationSetup>,
     payload: Result<Json<NotarizationRequest>, JsonRejection>,
 ) -> impl IntoResponse {
@@ -75,6 +75,7 @@ pub async fn notarize(
     }
 
     let prover_session_id = Uuid::new_v4().to_string();
+
     // Store the configuration data in a temporary store, currently mainly used for websocket clients
     setup
         .store
@@ -84,7 +85,7 @@ pub async fn notarize(
 
     trace!("Latest store state: {:?}", setup.store);
 
-    // Start the notarization process using underlying TCP connection if the request comes from a TCP client
+    // If the request comes from a TCP client, trigger the notarization process by extracting the underlying TCP connection
     if payload.client_type == ClientType::Tcp {
         let tcp_extractor = match tcp_extractor {
             Some(extractor) => extractor,
@@ -94,14 +95,16 @@ pub async fn notarize(
                 return NotaryServerError::BadProverRequest(err_msg).into_response();
             }
         };
+
+        let notary_session_id = prover_session_id.clone();
+
         debug!(
             ?prover_session_id,
             "Spawning notarization thread for tcp client"
         );
-        let notary_session_id = prover_session_id.clone();
-
         tokio::spawn(async move {
             // Poll the OnUpgrade object to obtain the underlying TCP connection wrapped in Upgraded
+            // This future should only return after the original HTTP exchange is done
             let stream = match tcp_extractor.on_upgrade.await {
                 Ok(upgraded) => upgraded,
                 Err(err) => {
@@ -132,19 +135,12 @@ pub async fn notarize(
                 }
             }
         });
-        return (
-            StatusCode::OK,
-            // Need to send close to signal tcp client to close the http connection so that client can extract the underlying tcp connection for notarization
-            [(header::CONNECTION, "Close")],
-            Json(NotarizationResponse {
-                session_id: prover_session_id,
-            }),
-        )
-            .into_response();
     }
-    // Don't send close connection to websocket client so that they can reuse the same underlying tcp connection to establish websocket connection
+    // Return the session id in the response to the client
     (
         StatusCode::OK,
+        // Need to send Close header so that client can finish the http session and claim the underlying tcp connection for notarization
+        [(header::CONNECTION, "Close")],
         Json(NotarizationResponse {
             session_id: prover_session_id,
         }),
