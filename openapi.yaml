@@ -1,0 +1,92 @@
+openapi: 3.0.0
+
+info:
+  title: Notary Server
+  description: Notary server written in Rust to provide notarization service.
+  version: 0.1.0
+
+tags:
+  - name: Notarization
+
+paths:
+  /notarize:
+    post:
+      tags:
+        - Notarization
+      description: Configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
+      parameters:
+        - in: header
+          name: Content-Type
+          description: The value must be application/json
+          schema:
+            type: string
+            enum:
+              - "application/json"
+          required: true
+        - in: header
+          name: Connection
+          description: Header to be provided if prover is TCP client, the value should be 'Upgrade'
+          schema:
+            type: string
+            enum:
+              - "Upgrade"
+        - in: header
+          name: Upgrade
+          description: Header to be provided if prover is TCP client, the value should be 'TCP'
+          schema:
+            type: string
+            enum:
+              - "TCP"
+      requestBody:
+        description: Notarization request to server
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotarizationRequest"
+      responses:
+        "200":
+          description: Notarization response from server
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotarizationResponse"
+        "400":
+          description: Configuration parameters or headers provided by prover are invalid
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid request from prover: Failed to deserialize the JSON body into the target type"
+        "500":
+          description: There was some internal error when processing
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Error occurred during notarization"
+
+components:
+  schemas:
+    NotarizationRequest:
+      type: object
+      properties:
+        clientType:
+          description: Types of client that the prover is using
+          type: string
+          enum:
+            - "Tcp"
+            - "Websocket"
+        maxTranscriptSize:  
+          description: Maximum transcript size in bytes
+          type: integer
+      required:
+        - "clientType"
+        - "maxTranscriptSize"
+    NotarizationResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+      required:
+        - "sessionId"
