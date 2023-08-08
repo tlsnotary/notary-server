@@ -23,17 +23,17 @@ cargo run -- --config-file <path-to-new-config-file>
 
 ---
 ## API
-All APIs are TLS-protected, hence please use https:// or wss://.
+All APIs are TLS-protected, hence please use `https://` or `wss://`.
 ### HTTP APIs
 Defined in the [OpenAPI specification](./openapi.yaml).
 
 ### WebSocket APIs
 #### /ws-notarize
 ##### Description
-To perform notarization using the session id (unique id returned upon calling the /notarize endpoint successfully) submitted as a custom header.
+To perform notarization using the session id (unique id returned upon calling the `/notarize` endpoint successfully) submitted as a custom header.
 
 ##### Custom Header
-X-Session-Id
+`X-Session-Id`
 
 ##### Custom Header Type
 String
