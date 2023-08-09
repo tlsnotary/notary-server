@@ -8,7 +8,7 @@ use ws_stream_tungstenite::WsStream;
 
 use crate::{
     axum_websocket::{WebSocket, WebSocketUpgrade},
-    domain::notary::NotarizationSetup,
+    domain::notary::NotaryGlobals,
     error::NotaryServerError,
     service::notary_service,
 };
@@ -19,7 +19,7 @@ use crate::{
 pub async fn upgrade_websocket(
     ws: WebSocketUpgrade,
     mut headers: HeaderMap,
-    State(setup): State<NotarizationSetup>,
+    State(notary_globals): State<NotaryGlobals>,
 ) -> Response {
     info!("Received websocket request: {:?}", ws);
     // Extract the session_id from the headers
@@ -39,7 +39,7 @@ pub async fn upgrade_websocket(
         }
     };
     // Fetch the configuration data from the store using the session_id
-    let max_transcript_size = match setup.store.lock().await.get(&session_id) {
+    let max_transcript_size = match notary_globals.store.lock().await.get(&session_id) {
         Some(max_transcript_size) => max_transcript_size.to_owned(),
         None => {
             let err_msg = format!("Session id {} does not exist", session_id);
@@ -48,13 +48,15 @@ pub async fn upgrade_websocket(
         }
     };
     // This completes the HTTP Upgrade request and returns a successful response to the client, meanwhile initiating the websocket connection
-    ws.on_upgrade(move |socket| websocket_notarize(socket, setup, session_id, max_transcript_size))
+    ws.on_upgrade(move |socket| {
+        websocket_notarize(socket, notary_globals, session_id, max_transcript_size)
+    })
 }
 
 /// Perform notarization using the established websocket connection
 async fn websocket_notarize(
     socket: WebSocket,
-    setup: NotarizationSetup,
+    notary_globals: NotaryGlobals,
     session_id: String,
     max_transcript_size: Option<usize>,
 ) {
@@ -63,7 +65,7 @@ async fn websocket_notarize(
     let stream = WsStream::new(socket.into_inner());
     match notary_service(
         stream,
-        &setup.notary_signing_key,
+        &notary_globals.notary_signing_key,
         &session_id,
         max_transcript_size,
     )

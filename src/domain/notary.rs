@@ -32,11 +32,25 @@ pub enum ClientType {
     Websocket,
 }
 
-/// Setup data that needs to be shared with the axum handlers
+/// Global data that needs to be shared with the axum handlers
 #[derive(Clone, Debug)]
-pub struct NotarizationSetup {
+pub struct NotaryGlobals {
     pub notary_signing_key: SigningKey,
     pub notarization_config: NotarizationProperties,
     /// A temporary storage to store configuration data, mainly used for WebSocket client
     pub store: Arc<Mutex<HashMap<String, Option<usize>>>>,
+}
+
+impl NotaryGlobals {
+    pub fn new(
+        notary_signing_key: SigningKey,
+        notarization_config: NotarizationProperties,
+        store: Arc<Mutex<HashMap<String, Option<usize>>>>,
+    ) -> Self {
+        Self {
+            notary_signing_key,
+            notarization_config,
+            store,
+        }
+    }
 }

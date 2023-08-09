@@ -10,7 +10,7 @@ use tracing::{debug, error, info, trace};
 use uuid::Uuid;
 
 use crate::{
-    domain::notary::{ClientType, NotarizationRequest, NotarizationResponse, NotarizationSetup},
+    domain::notary::{ClientType, NotarizationRequest, NotarizationResponse, NotaryGlobals},
     service::notary_service,
     NotaryServerError,
 };
@@ -45,10 +45,10 @@ where
 }
 
 /// Handler to configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
-#[debug_handler(state = NotarizationSetup)]
+#[debug_handler(state = NotaryGlobals)]
 pub async fn notarize(
     tcp_extractor: Option<TcpConnectionExtractor>,
-    State(setup): State<NotarizationSetup>,
+    State(notary_globals): State<NotaryGlobals>,
     payload: Result<Json<NotarizationRequest>, JsonRejection>,
 ) -> impl IntoResponse {
     info!(?payload, "Received request for notarization");
@@ -63,10 +63,10 @@ pub async fn notarize(
     };
 
     // Ensure that the max_transcript_size submitted is not larger than the global max limit configured in notary server
-    if payload.max_transcript_size > Some(setup.notarization_config.max_transcript_size) {
+    if payload.max_transcript_size > Some(notary_globals.notarization_config.max_transcript_size) {
         error!(
             "Max transcript size requested {:?} exceeds the maximum threshold {:?}",
-            payload.max_transcript_size, setup.notarization_config.max_transcript_size
+            payload.max_transcript_size, notary_globals.notarization_config.max_transcript_size
         );
         return NotaryServerError::BadProverRequest(
             "Max transcript size requested exceeds the maximum threshold".to_string(),
@@ -77,13 +77,13 @@ pub async fn notarize(
     let prover_session_id = Uuid::new_v4().to_string();
 
     // Store the configuration data in a temporary store, currently mainly used for websocket clients
-    setup
+    notary_globals
         .store
         .lock()
         .await
         .insert(prover_session_id.clone(), payload.max_transcript_size);
 
-    trace!("Latest store state: {:?}", setup.store);
+    trace!("Latest store state: {:?}", notary_globals.store);
 
     // If the request comes from a TCP client, trigger the notarization process by extracting the underlying TCP connection
     if payload.client_type == ClientType::Tcp {
@@ -118,7 +118,7 @@ pub async fn notarize(
             debug!(?notary_session_id, "Successfully extracted tcp connection");
             match notary_service(
                 stream,
-                &setup.notary_signing_key,
+                &notary_globals.notary_signing_key,
                 &notary_session_id,
                 payload.max_transcript_size,
             )

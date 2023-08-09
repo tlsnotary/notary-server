@@ -11,7 +11,7 @@ This project is currently under active development and should not be used in pro
 
 ---
 ## Running the server
-1. Configure the server setting in this [file](./src/config/config.yaml) — refer [here](./src/config.rs) for more information on the definition of the setting parameters.
+1. Configure the server setting in this [file](./config.yaml) — refer [here](./src/config.rs) for more information on the definition of the setting parameters.
 2. Start the server by running following in a terminal at the top level of this project.
 ```bash
 cargo run

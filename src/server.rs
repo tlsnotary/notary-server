@@ -28,7 +28,7 @@ use tracing::{debug, error, info};
 
 use crate::{
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
-    domain::notary::NotarizationSetup,
+    domain::notary::NotaryGlobals,
     error::NotaryServerError,
     service::{tcp::notarize, websocket::upgrade_websocket},
 };
@@ -74,6 +74,7 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     let protocol = Arc::new(Http::new());
     // A temporary storage to store configuration data, mainly used for WebSocket client
     let store = Arc::new(Mutex::new(HashMap::<String, Option<usize>>::new()));
+    let notary_globals = NotaryGlobals::new(notary_signing_key, config.notarization.clone(), store);
     let router = Router::new()
         .route(
             "/healthcheck",
@@ -81,22 +82,19 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
         )
         .route("/notarize", post(notarize))
         .route("/ws-notarize", get(upgrade_websocket))
-        .with_state(NotarizationSetup {
-            notary_signing_key,
-            notarization_config: config.notarization.clone(),
-            store,
-        });
+        .with_state(notary_globals);
     let mut app = router.into_make_service();
 
     loop {
-        // Poll for any incoming connection constantly, ensure that all operations inside are infallible to prevent bringing down the server
+        // Poll and await for any incoming connection, ensure that all operations inside are infallible to prevent bringing down the server
         let (prover_address, stream) =
             match poll_fn(|cx| Pin::new(&mut listener).poll_accept(cx)).await {
                 Some(Ok(connection)) => (connection.remote_addr(), connection),
-                _ => {
-                    error!("{}", NotaryServerError::Connection("".to_string()));
+                Some(Err(err)) => {
+                    error!("{}", NotaryServerError::Connection(err.to_string()));
                     continue;
                 }
+                None => unreachable!("The poll_accept method should never return None"),
             };
         debug!(?prover_address, "Received a prover's TCP connection");
 

@@ -1,10 +1,37 @@
-#![allow(unused)]
-
-//! Modified from https://github.com/tokio-rs/axum/blob/main/axum/src/extract/ws.rs
+//! The following code is adapted from https://github.com/tokio-rs/axum/blob/axum-v0.6.19/axum/src/extract/ws.rs
 //! where we swapped out tokio_tungstenite (https://docs.rs/tokio-tungstenite/latest/tokio_tungstenite/)
 //! with async_tungstenite (https://docs.rs/async-tungstenite/latest/async_tungstenite/) so that we can use
 //! ws_stream_tungstenite (https://docs.rs/ws_stream_tungstenite/latest/ws_stream_tungstenite/index.html)
-//! to get AsyncRead and AsyncWrite implemented for the WebSocket
+//! to get AsyncRead and AsyncWrite implemented for the WebSocket. Any other modification is commented with the prefix "NOTARY_MODIFICATION:"
+//!
+//! The code is under the following license:
+//!
+//! Copyright (c) 2019 Axum Contributors
+//!
+//! Permission is hereby granted, free of charge, to any
+//! person obtaining a copy of this software and associated
+//! documentation files (the "Software"), to deal in the
+//! Software without restriction, including without
+//! limitation the rights to use, copy, modify, merge,
+//! publish, distribute, sublicense, and/or sell copies of
+//! the Software, and to permit persons to whom the Software
+//! is furnished to do so, subject to the following
+//! conditions:
+//!
+//! The above copyright notice and this permission notice
+//! shall be included in all copies or substantial portions
+//! of the Software.
+//!
+//! THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+//! ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+//! TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+//! PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+//! SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+//! CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+//! OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+//! IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+//! DEALINGS IN THE SOFTWARE.
+//!
 //!
 //! Handle WebSocket connections.
 //!
@@ -101,6 +128,8 @@
 //! ```
 //!
 //! [`StreamExt::split`]: https://docs.rs/futures/0.3.17/futures/stream/trait.StreamExt.html#method.split
+
+#![allow(unused)]
 
 use self::rejection::*;
 use async_trait::async_trait;
@@ -316,6 +345,7 @@ impl<F> WebSocketUpgrade<F> {
                 }
             };
             let socket = WebSocketStream::from_raw_socket(
+                // NOTARY_MODIFICATION: Need to use TokioAdapter to wrap Upgraded which doesn't implement futures crate's AsyncRead and AsyncWrite
                 TokioAdapter::new(upgraded),
                 protocol::Role::Server,
                 Some(config),

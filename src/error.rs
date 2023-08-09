@@ -38,9 +38,9 @@ impl IntoResponse for NotaryServerError {
             bad_request_error @ NotaryServerError::BadProverRequest(_) => {
                 (StatusCode::BAD_REQUEST, bad_request_error.to_string()).into_response()
             }
-            internal_error => (
+            _ => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                internal_error.to_string(),
+                "Something wrong happened.",
             )
                 .into_response(),
         }

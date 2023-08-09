@@ -5,6 +5,6 @@ use structopt::StructOpt;
 #[structopt(name = "Notary Server")]
 pub struct CliFields {
     /// Configuration file location
-    #[structopt(long, default_value = "./src/config/config.yaml")]
+    #[structopt(long, default_value = "./config.yaml")]
     pub config_file: String,
 }
