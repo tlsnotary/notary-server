@@ -1,17 +1,18 @@
 use async_trait::async_trait;
 use axum::{
+    body,
     extract::{rejection::JsonRejection, FromRequestParts, State},
-    http::{header, request::Parts, StatusCode},
-    response::{IntoResponse, Json},
+    http::{header, request::Parts, HeaderValue, StatusCode},
+    response::{IntoResponse, Json, Response},
 };
 use axum_macros::debug_handler;
-use hyper::upgrade::OnUpgrade;
-use tracing::{debug, error, info, trace};
+use hyper::upgrade::{OnUpgrade, Upgraded};
+use std::future::Future;
+use tracing::{error, info, trace};
 use uuid::Uuid;
 
 use crate::{
-    domain::notary::{ClientType, NotarizationRequest, NotarizationResponse, NotaryGlobals},
-    service::notary_service,
+    domain::notary::{NotarizationRequest, NotarizationResponse, NotaryGlobals},
     NotaryServerError,
 };
 
@@ -44,10 +45,41 @@ where
     }
 }
 
+impl TcpConnectionExtractor {
+    pub fn on_upgrade<C, Fut>(self, callback: C) -> Response
+    where
+        C: FnOnce(Upgraded) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let on_upgrade = self.on_upgrade;
+        tokio::spawn(async move {
+            let upgraded = match on_upgrade.await {
+                Ok(upgraded) => upgraded,
+                Err(err) => {
+                    error!("Something wrong with upgrading HTTP: {:?}", err);
+                    return;
+                }
+            };
+            callback(upgraded).await;
+        });
+
+        #[allow(clippy::declare_interior_mutable_const)]
+        const UPGRADE: HeaderValue = HeaderValue::from_static("upgrade");
+        #[allow(clippy::declare_interior_mutable_const)]
+        const TCP: HeaderValue = HeaderValue::from_static("tcp");
+
+        let builder = Response::builder()
+            .status(StatusCode::SWITCHING_PROTOCOLS)
+            .header(header::CONNECTION, UPGRADE)
+            .header(header::UPGRADE, TCP);
+
+        builder.body(body::boxed(body::Empty::new())).unwrap()
+    }
+}
+
 /// Handler to configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
 #[debug_handler(state = NotaryGlobals)]
-pub async fn notarize(
-    tcp_extractor: Option<TcpConnectionExtractor>,
+pub async fn initiate(
     State(notary_globals): State<NotaryGlobals>,
     payload: Result<Json<NotarizationRequest>, JsonRejection>,
 ) -> impl IntoResponse {
@@ -85,62 +117,9 @@ pub async fn notarize(
 
     trace!("Latest store state: {:?}", notary_globals.store);
 
-    // If the request comes from a TCP client, trigger the notarization process by extracting the underlying TCP connection
-    if payload.client_type == ClientType::Tcp {
-        let tcp_extractor = match tcp_extractor {
-            Some(extractor) => extractor,
-            None => {
-                let err_msg = "Upgrade header is not set for TCP client".to_string();
-                error!(err_msg);
-                return NotaryServerError::BadProverRequest(err_msg).into_response();
-            }
-        };
-
-        let notary_session_id = prover_session_id.clone();
-
-        debug!(
-            ?prover_session_id,
-            "Spawning notarization thread for tcp client"
-        );
-        tokio::spawn(async move {
-            // Poll the OnUpgrade object to obtain the underlying TCP connection wrapped in Upgraded
-            // This future should only return after the original HTTP exchange is done
-            let stream = match tcp_extractor.on_upgrade.await {
-                Ok(upgraded) => upgraded,
-                Err(err) => {
-                    error!(
-                        ?notary_session_id,
-                        "Something wrong with upgrading HTTP: {:?}", err
-                    );
-                    return;
-                }
-            };
-            debug!(?notary_session_id, "Successfully extracted tcp connection");
-            match notary_service(
-                stream,
-                &notary_globals.notary_signing_key,
-                &notary_session_id,
-                payload.max_transcript_size,
-            )
-            .await
-            {
-                Ok(_) => {
-                    info!(?notary_session_id, "Successful notarization using raw tcp!");
-                }
-                Err(err) => {
-                    error!(
-                        ?notary_session_id,
-                        "Failed notarization using raw tcp: {err}"
-                    );
-                }
-            }
-        });
-    }
     // Return the session id in the response to the client
     (
         StatusCode::OK,
-        // Need to send Close header so that client can finish the http session and claim the underlying tcp connection for notarization
-        [(header::CONNECTION, "Close")],
         Json(NotarizationResponse {
             session_id: prover_session_id,
         }),

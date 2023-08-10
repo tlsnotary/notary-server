@@ -124,22 +124,19 @@ async fn test_tcp_prover() {
     })
     .unwrap();
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
+        .uri(format!("https://{notary_domain}:{notary_port}/initialize"))
         .method("POST")
-        .header("Host", notary_domain)
-        .header("Connection", "Upgrade")
-        // Need to specify this upgrade header for server to extract tcp connection later
-        .header("Upgrade", "TCP")
+        .header("Host", notary_domain.clone())
         // Need to specify application/json for axum to parse it as json
         .header("Content-Type", "application/json")
         .body(Body::from(payload))
         .unwrap();
 
-    debug!("Sending request");
+    debug!("Sending configuration request");
 
     let response = request_sender.send_request(request).await.unwrap();
 
-    debug!("Sent request");
+    debug!("Sent configuration request");
 
     assert!(response.status() == StatusCode::OK);
 
@@ -151,6 +148,31 @@ async fn test_tcp_prover() {
         serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
 
     debug!("Notarization response: {:?}", notarization_response,);
+
+    let request = Request::builder()
+        .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
+        .method("GET")
+        .header("Host", notary_domain)
+        .header("Connection", "Upgrade")
+        // Need to specify this upgrade header for server to extract tcp connection later
+        .header("Upgrade", "TCP")
+        // Need to specify application/json for axum to parse it as json
+        .header("Content-Type", "application/json")
+        // Need to specify the session_id so that notary server knows the right configuration to use
+        // as the configuration is set in the previous HTTP call
+        .header("X-Session-Id", notarization_response.session_id.clone())
+        .body(Body::empty())
+        .unwrap();
+
+    debug!("Sending notarization request");
+
+    let response = request_sender.send_request(request).await.unwrap();
+
+    debug!("Sent notarization request");
+
+    assert!(response.status() == StatusCode::SWITCHING_PROTOCOLS);
+
+    debug!("Switched protocol OK");
 
     // Claim back the TCP socket after HTTP exchange is done so that client can use it for notarization
     let Parts {
@@ -271,7 +293,7 @@ async fn test_websocket_prover() {
     .unwrap();
 
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
+        .uri(format!("https://{notary_domain}:{notary_port}/initialize"))
         .method("POST")
         .header("Host", notary_domain.clone())
         // Need to specify application/json for axum to parse it as json
@@ -303,7 +325,7 @@ async fn test_websocket_prover() {
     // client while using its high level request function — there does not seem to have a crate that can let you
     // make a request without establishing TCP connection where you can claim the TCP connection later after making the request
     let request = http::Request::builder()
-        .uri(format!("wss://{notary_domain}:{notary_port}/ws-notarize"))
+        .uri(format!("wss://{notary_domain}:{notary_port}/notarize"))
         .header("Host", notary_domain.clone())
         .header("Sec-WebSocket-Key", uuid::Uuid::new_v4().to_string())
         .header("Sec-WebSocket-Version", "13")

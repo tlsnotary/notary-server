@@ -30,7 +30,7 @@ use crate::{
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
     domain::notary::NotaryGlobals,
     error::NotaryServerError,
-    service::{tcp::notarize, websocket::upgrade_websocket},
+    service::{tcp::initiate, websocket::switch_protocol},
 };
 
 /// Start a TLS-secured TCP server to accept notarization request for both TCP and WebSocket clients
@@ -80,8 +80,8 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
             "/healthcheck",
             get(|| async move { (StatusCode::OK, "Ok").into_response() }),
         )
-        .route("/notarize", post(notarize))
-        .route("/ws-notarize", get(upgrade_websocket))
+        .route("/initialize", post(initiate))
+        .route("/notarize", get(switch_protocol))
         .with_state(notary_globals);
     let mut app = router.into_make_service();
 

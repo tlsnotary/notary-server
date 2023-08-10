@@ -457,7 +457,7 @@ where
     }
 }
 
-fn header_eq(headers: &HeaderMap, key: HeaderName, value: &'static str) -> bool {
+pub fn header_eq(headers: &HeaderMap, key: HeaderName, value: &'static str) -> bool {
     if let Some(header) = headers.get(&key) {
         header.as_bytes().eq_ignore_ascii_case(value.as_bytes())
     } else {
