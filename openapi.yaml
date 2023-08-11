@@ -9,11 +9,11 @@ tags:
   - name: Notarization
 
 paths:
-  /notarize:
+  /session:
     post:
       tags:
         - Notarization
-      description: Configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
+      description: Initialize and configure notarization for both TCP and WebSocket clients
       parameters:
         - in: header
           name: Content-Type
@@ -23,34 +23,20 @@ paths:
             enum:
               - "application/json"
           required: true
-        - in: header
-          name: Connection
-          description: Header to be provided if prover is TCP client, the value should be 'Upgrade'
-          schema:
-            type: string
-            enum:
-              - "Upgrade"
-        - in: header
-          name: Upgrade
-          description: Header to be provided if prover is TCP client, the value should be 'TCP'
-          schema:
-            type: string
-            enum:
-              - "TCP"
       requestBody:
-        description: Notarization request to server
+        description: Notarization session request to server
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/NotarizationRequest"
+              $ref: "#/components/schemas/NotarizationSessionRequest"
       responses:
         "200":
-          description: Notarization response from server
+          description: Notarization session response from server
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/NotarizationResponse"
+                $ref: "#/components/schemas/NotarizationSessionResponse"
         "400":
           description: Configuration parameters or headers provided by prover are invalid
           content:
@@ -64,11 +50,56 @@ paths:
             text/plain:
               schema:
                 type: string
-                example: "Error occurred during notarization"
+                example: "Something is wrong"
+  /notarize:
+    get:
+      tags:
+        - Notarization
+      description: Start notarization for TCP client
+      parameters:
+        - in: header
+          name: Connection
+          description: The value should be 'Upgrade'
+          schema:
+            type: string
+            enum:
+              - "Upgrade"
+          required: true
+        - in: header
+          name: Upgrade
+          description: The value should be 'TCP'
+          schema:
+            type: string
+            enum:
+              - "TCP"
+          required: true
+        - in: header
+          name: X-Session-Id
+          description: Unique ID returned from server upon calling POST /session
+          schema:
+            type: string
+          required: true
+      responses:
+        "101":
+          description: Switching protocol response
+        "400":
+          description: Headers provided by prover are invalid
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Invalid request from prover: Upgrade header is not set for client"
+        "500":
+          description: There was some internal error when processing
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Something is wrong"
 
 components:
   schemas:
-    NotarizationRequest:
+    NotarizationSessionRequest:
       type: object
       properties:
         clientType:
@@ -83,7 +114,7 @@ components:
       required:
         - "clientType"
         - "maxTranscriptSize"
-    NotarizationResponse:
+    NotarizationSessionResponse:
       type: object
       properties:
         sessionId:

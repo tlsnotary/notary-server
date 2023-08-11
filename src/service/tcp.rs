@@ -1,32 +1,27 @@
 use async_trait::async_trait;
 use axum::{
     body,
-    extract::{rejection::JsonRejection, FromRequestParts, State},
+    extract::FromRequestParts,
     http::{header, request::Parts, HeaderValue, StatusCode},
-    response::{IntoResponse, Json, Response},
+    response::Response,
 };
-use axum_macros::debug_handler;
 use hyper::upgrade::{OnUpgrade, Upgraded};
 use std::future::Future;
-use tracing::{error, info, trace};
-use uuid::Uuid;
+use tracing::{debug, error, info};
 
-use crate::{
-    domain::notary::{NotarizationRequest, NotarizationResponse, NotaryGlobals},
-    NotaryServerError,
-};
+use crate::{domain::notary::NotaryGlobals, service::notary_service, NotaryServerError};
 
 /// Custom extractor used to extract underlying TCP connection for TCP client — using the same upgrade primitives used by
 /// the WebSocket implementation where the underlying TCP connection (wrapped in an Upgraded object) only gets polled as an OnUpgrade future
 /// after the ongoing HTTP request is finished (ref: https://github.com/tokio-rs/axum/blob/a6a849bb5b96a2f641fa077fe76f70ad4d20341c/axum/src/extract/ws.rs#L122)
 ///
 /// More info on the upgrade primitives: https://docs.rs/hyper/latest/hyper/upgrade/index.html
-pub struct TcpConnectionExtractor {
+pub struct TcpUpgrade {
     pub on_upgrade: OnUpgrade,
 }
 
 #[async_trait]
-impl<S> FromRequestParts<S> for TcpConnectionExtractor
+impl<S> FromRequestParts<S> for TcpUpgrade
 where
     S: Send + Sync,
 {
@@ -45,7 +40,10 @@ where
     }
 }
 
-impl TcpConnectionExtractor {
+impl TcpUpgrade {
+    /// Utility function to complete the http upgrade protocol by
+    /// (1) Return 101 switching protocol response to client to indicate the switching to TCP
+    /// (2) Spawn a new thread to await on the OnUpgrade object to claim the underlying TCP connection
     pub fn on_upgrade<C, Fut>(self, callback: C) -> Response
     where
         C: FnOnce(Upgraded) -> Fut + Send + 'static,
@@ -77,52 +75,27 @@ impl TcpConnectionExtractor {
     }
 }
 
-/// Handler to configure notarization for both TCP and WebSocket clients, as well as to trigger notarization for TCP client
-#[debug_handler(state = NotaryGlobals)]
-pub async fn initiate(
-    State(notary_globals): State<NotaryGlobals>,
-    payload: Result<Json<NotarizationRequest>, JsonRejection>,
-) -> impl IntoResponse {
-    info!(?payload, "Received request for notarization");
-
-    // Parse the body payload
-    let payload = match payload {
-        Ok(payload) => payload,
-        Err(err) => {
-            error!("Malformed payload submitted for notarization: {err}");
-            return NotaryServerError::BadProverRequest(err.to_string()).into_response();
-        }
-    };
-
-    // Ensure that the max_transcript_size submitted is not larger than the global max limit configured in notary server
-    if payload.max_transcript_size > Some(notary_globals.notarization_config.max_transcript_size) {
-        error!(
-            "Max transcript size requested {:?} exceeds the maximum threshold {:?}",
-            payload.max_transcript_size, notary_globals.notarization_config.max_transcript_size
-        );
-        return NotaryServerError::BadProverRequest(
-            "Max transcript size requested exceeds the maximum threshold".to_string(),
-        )
-        .into_response();
-    }
-
-    let prover_session_id = Uuid::new_v4().to_string();
-
-    // Store the configuration data in a temporary store, currently mainly used for websocket clients
-    notary_globals
-        .store
-        .lock()
-        .await
-        .insert(prover_session_id.clone(), payload.max_transcript_size);
-
-    trace!("Latest store state: {:?}", notary_globals.store);
-
-    // Return the session id in the response to the client
-    (
-        StatusCode::OK,
-        Json(NotarizationResponse {
-            session_id: prover_session_id,
-        }),
+/// Perform notarization using the extracted tcp connection
+pub async fn tcp_notarize(
+    stream: Upgraded,
+    notary_globals: NotaryGlobals,
+    session_id: String,
+    max_transcript_size: Option<usize>,
+) {
+    debug!(?session_id, "Upgraded to tcp connection");
+    match notary_service(
+        stream,
+        &notary_globals.notary_signing_key,
+        &session_id,
+        max_transcript_size,
     )
-        .into_response()
+    .await
+    {
+        Ok(_) => {
+            info!(?session_id, "Successful notarization using tcp!");
+        }
+        Err(err) => {
+            error!(?session_id, "Failed notarization using tcp: {err}");
+        }
+    }
 }

@@ -22,9 +22,9 @@ use tracing::debug;
 use ws_stream_tungstenite::WsStream;
 
 use notary_server::{
-    read_pem_file, run_server, NotarizationProperties, NotarizationRequest, NotarizationResponse,
-    NotaryServerProperties, NotarySignatureProperties, ServerProperties, TLSSignatureProperties,
-    TracingProperties,
+    read_pem_file, run_server, NotarizationProperties, NotarizationSessionRequest,
+    NotarizationSessionResponse, NotaryServerProperties, NotarySignatureProperties,
+    ServerProperties, TLSSignatureProperties, TracingProperties,
 };
 
 const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
@@ -107,9 +107,7 @@ async fn test_tcp_prover() {
         .await
         .unwrap();
 
-    // Attach the hyper HTTP client to the notary TLS connection to send notarization request via HTTP to the /notarize endpoint
-    // 1. Use HTTP to send configuration data e.g. max transcript size and obtain notarization session id from server
-    // 2. Use underlying TCP connection to perform notarization
+    // Attach the hyper HTTP client to the notary TLS connection to send request to the /session endpoint to configure notarization and obtain session id
     let (mut request_sender, connection) = hyper::client::conn::handshake(notary_tls_socket)
         .await
         .unwrap();
@@ -118,13 +116,13 @@ async fn test_tcp_prover() {
     let connection_task = tokio::spawn(connection.without_shutdown());
 
     // Build the HTTP request to configure notarization
-    let payload = serde_json::to_string(&NotarizationRequest {
+    let payload = serde_json::to_string(&NotarizationSessionRequest {
         client_type: notary_server::ClientType::Tcp,
         max_transcript_size: Some(notary_config.notarization.max_transcript_size),
     })
     .unwrap();
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/initialize"))
+        .uri(format!("https://{notary_domain}:{notary_port}/session"))
         .method("POST")
         .header("Host", notary_domain.clone())
         // Need to specify application/json for axum to parse it as json
@@ -145,10 +143,12 @@ async fn test_tcp_prover() {
     // Pretty printing :)
     let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
     let notarization_response =
-        serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
+        serde_json::from_str::<NotarizationSessionResponse>(&String::from_utf8_lossy(&payload))
+            .unwrap();
 
     debug!("Notarization response: {:?}", notarization_response,);
 
+    // Send notarization request via HTTP, where the underlying TCP connection will be extracted later
     let request = Request::builder()
         .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
         .method("GET")
@@ -156,8 +156,6 @@ async fn test_tcp_prover() {
         .header("Connection", "Upgrade")
         // Need to specify this upgrade header for server to extract tcp connection later
         .header("Upgrade", "TCP")
-        // Need to specify application/json for axum to parse it as json
-        .header("Content-Type", "application/json")
         // Need to specify the session_id so that notary server knows the right configuration to use
         // as the configuration is set in the previous HTTP call
         .header("X-Session-Id", notarization_response.session_id.clone())
@@ -277,7 +275,7 @@ async fn test_websocket_prover() {
         .build()
         .unwrap();
 
-    // Call the /notarize HTTP API to configure notarization and obtain session id
+    // Call the /session HTTP API to configure notarization and obtain session id
     let mut hyper_http_connector = HttpConnector::new();
     hyper_http_connector.enforce_http(false);
     let mut hyper_tls_connector =
@@ -286,14 +284,14 @@ async fn test_websocket_prover() {
     let https_client = Client::builder().build::<_, hyper::Body>(hyper_tls_connector);
 
     // Build the HTTP request to configure notarization
-    let payload = serde_json::to_string(&NotarizationRequest {
+    let payload = serde_json::to_string(&NotarizationSessionRequest {
         client_type: notary_server::ClientType::Websocket,
         max_transcript_size: Some(notary_config.notarization.max_transcript_size),
     })
     .unwrap();
 
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/initialize"))
+        .uri(format!("https://{notary_domain}:{notary_port}/session"))
         .method("POST")
         .header("Host", notary_domain.clone())
         // Need to specify application/json for axum to parse it as json
@@ -314,7 +312,8 @@ async fn test_websocket_prover() {
     // Pretty printing :)
     let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
     let notarization_response =
-        serde_json::from_str::<NotarizationResponse>(&String::from_utf8_lossy(&payload)).unwrap();
+        serde_json::from_str::<NotarizationSessionResponse>(&String::from_utf8_lossy(&payload))
+            .unwrap();
 
     debug!("Notarization response: {:?}", notarization_response,);
 

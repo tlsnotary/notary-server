@@ -1,4 +1,3 @@
-mod axum_websocket;
 mod config;
 mod domain;
 mod error;
@@ -13,7 +12,7 @@ pub use config::{
 };
 pub use domain::{
     cli::CliFields,
-    notary::{ClientType, NotarizationRequest, NotarizationResponse},
+    notary::{ClientType, NotarizationSessionRequest, NotarizationSessionResponse},
 };
 pub use error::NotaryServerError;
 pub use server::{read_pem_file, run_server};

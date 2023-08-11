@@ -13,7 +13,6 @@ use hyper::server::{
 use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::{
-    collections::HashMap,
     fs::File as StdFile,
     io::BufReader,
     net::{IpAddr, SocketAddr},
@@ -21,7 +20,7 @@ use std::{
     sync::Arc,
 };
 
-use tokio::{fs::File, net::TcpListener, sync::Mutex};
+use tokio::{fs::File, net::TcpListener};
 use tokio_rustls::TlsAcceptor;
 use tower::MakeService;
 use tracing::{debug, error, info};
@@ -30,7 +29,7 @@ use crate::{
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
     domain::notary::NotaryGlobals,
     error::NotaryServerError,
-    service::{tcp::initiate, websocket::switch_protocol},
+    service::{initialize, upgrade_protocol},
 };
 
 /// Start a TLS-secured TCP server to accept notarization request for both TCP and WebSocket clients
@@ -72,16 +71,14 @@ pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotarySer
     );
 
     let protocol = Arc::new(Http::new());
-    // A temporary storage to store configuration data, mainly used for WebSocket client
-    let store = Arc::new(Mutex::new(HashMap::<String, Option<usize>>::new()));
-    let notary_globals = NotaryGlobals::new(notary_signing_key, config.notarization.clone(), store);
+    let notary_globals = NotaryGlobals::new(notary_signing_key, config.notarization.clone());
     let router = Router::new()
         .route(
             "/healthcheck",
             get(|| async move { (StatusCode::OK, "Ok").into_response() }),
         )
-        .route("/initialize", post(initiate))
-        .route("/notarize", get(switch_protocol))
+        .route("/session", post(initialize))
+        .route("/notarize", get(upgrade_protocol))
         .with_state(notary_globals);
     let mut app = router.into_make_service();
 
