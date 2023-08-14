@@ -3,7 +3,7 @@ use structopt::StructOpt;
 use tracing::debug;
 
 use notary_server::{
-    init_tracing, parse_config_file, run_tcp_server, CliFields, NotaryServerError,
+    init_tracing, parse_config_file, run_server, CliFields, NotaryServerError,
     NotaryServerProperties,
 };
 
@@ -18,8 +18,8 @@ async fn main() -> Result<(), NotaryServerError> {
 
     debug!(?config, "Server config loaded");
 
-    // Run the tcp server
-    run_tcp_server(&config).await?;
+    // Run the server
+    run_server(&config).await?;
 
     Ok(())
 }

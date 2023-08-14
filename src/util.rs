@@ -17,7 +17,7 @@ mod test {
 
     #[test]
     fn test_parse_config_file() {
-        let location = "./src/config/config.yaml";
+        let location = "./config.yaml";
         let config: Result<NotaryServerProperties> = parse_config_file(location);
         assert!(
             config.is_ok(),
