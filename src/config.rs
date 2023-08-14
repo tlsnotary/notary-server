@@ -5,12 +5,21 @@ use serde::Deserialize;
 pub struct NotaryServerProperties {
     /// Name and address of the notary server
     pub server: ServerProperties,
+    /// Setting for notarization
+    pub notarization: NotarizationProperties,
     /// File path of private key and certificate (in PEM format) used for establishing TLS with prover
     pub tls_signature: TLSSignatureProperties,
     /// File path of private key (in PEM format) used to sign the notarisation
     pub notary_signature: NotarySignatureProperties,
     /// Setting for logging/tracing
     pub tracing: TracingProperties,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct NotarizationProperties {
+    /// Global limit for maximum transcript size in bytes
+    pub max_transcript_size: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]

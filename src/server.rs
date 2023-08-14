@@ -1,47 +1,55 @@
+use axum::{
+    http::{Request, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+    Router,
+};
 use eyre::{ensure, eyre, Result};
 use futures_util::future::poll_fn;
-use p256::{
-    ecdsa::{Signature, SigningKey},
-    pkcs8::DecodePrivateKey,
+use hyper::server::{
+    accept::Accept,
+    conn::{AddrIncoming, Http},
 };
+use p256::{ecdsa::SigningKey, pkcs8::DecodePrivateKey};
 use rustls::{Certificate, PrivateKey, ServerConfig};
 use std::{
     fs::File as StdFile,
     io::BufReader,
     net::{IpAddr, SocketAddr},
+    pin::Pin,
     sync::Arc,
 };
-use tlsn_notary::{bind_notary, NotaryConfig};
-use tokio::{
-    fs::File,
-    io::{AsyncRead, AsyncWrite},
-    net::TcpListener,
-};
+
+use tokio::{fs::File, net::TcpListener};
 use tokio_rustls::TlsAcceptor;
-use tokio_util::compat::TokioAsyncReadCompatExt;
+use tower::MakeService;
 use tracing::{debug, error, info};
 
 use crate::{
     config::{NotaryServerProperties, NotarySignatureProperties, TLSSignatureProperties},
+    domain::notary::NotaryGlobals,
     error::NotaryServerError,
+    service::{initialize, upgrade_protocol},
 };
 
-/// Start a TLS-secured TCP server to accept notarization request
+/// Start a TLS-secured TCP server to accept notarization request for both TCP and WebSocket clients
 #[tracing::instrument(skip(config))]
-pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
+pub async fn run_server(config: &NotaryServerProperties) -> Result<(), NotaryServerError> {
     // Load the private key and cert needed for TLS connection from fixture folder — can be swapped out when we stop using static self signed cert
     let (tls_private_key, tls_certificates) = load_tls_key_and_cert(&config.tls_signature).await?;
     // Load the private key for notarized transcript signing from fixture folder — can be swapped out when we use proper ephemeral signing key
     let notary_signing_key = load_notary_signing_key(&config.notary_signature).await?;
 
     // Build a TCP listener with TLS enabled
-    let tls_config = Arc::new(
-        ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(tls_certificates, tls_private_key)
-            .map_err(|err| eyre!("Failed to instantiate notary server tls config: {err}"))?,
-    );
+    let mut server_config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_no_client_auth()
+        .with_single_cert(tls_certificates, tls_private_key)
+        .map_err(|err| eyre!("Failed to instantiate notary server tls config: {err}"))?;
+
+    // Set the http protocols we support
+    server_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let tls_config = Arc::new(server_config);
 
     let notary_address = SocketAddr::new(
         IpAddr::V4(config.server.domain.parse().map_err(|err| {
@@ -54,25 +62,42 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
     let listener = TcpListener::bind(notary_address)
         .await
         .map_err(|err| eyre!("Failed to bind server address to tcp listener: {err}"))?;
+    let mut listener = AddrIncoming::from_listener(listener)
+        .map_err(|err| eyre!("Failed to build hyper tcp listener: {err}"))?;
 
     info!(
         "Listening for TLS-secured TCP traffic at {}",
         notary_address
     );
 
+    let protocol = Arc::new(Http::new());
+    let notary_globals = NotaryGlobals::new(notary_signing_key, config.notarization.clone());
+    let router = Router::new()
+        .route(
+            "/healthcheck",
+            get(|| async move { (StatusCode::OK, "Ok").into_response() }),
+        )
+        .route("/session", post(initialize))
+        .route("/notarize", get(upgrade_protocol))
+        .with_state(notary_globals);
+    let mut app = router.into_make_service();
+
     loop {
-        // Poll for any incoming connection constantly
-        let (stream, prover_address) = match poll_fn(|cx| listener.poll_accept(cx)).await {
-            Ok(connection) => connection,
-            Err(err) => {
-                error!("{}", NotaryServerError::Connection(err.to_string()));
-                continue;
-            }
-        };
+        // Poll and await for any incoming connection, ensure that all operations inside are infallible to prevent bringing down the server
+        let (prover_address, stream) =
+            match poll_fn(|cx| Pin::new(&mut listener).poll_accept(cx)).await {
+                Some(Ok(connection)) => (connection.remote_addr(), connection),
+                Some(Err(err)) => {
+                    error!("{}", NotaryServerError::Connection(err.to_string()));
+                    continue;
+                }
+                None => unreachable!("The poll_accept method should never return None"),
+            };
         debug!(?prover_address, "Received a prover's TCP connection");
 
         let acceptor = acceptor.clone();
-        let notary_signing_key = notary_signing_key.clone();
+        let protocol = protocol.clone();
+        let service = MakeService::<_, Request<hyper::Body>>::make_service(&mut app, &stream);
 
         // Spawn a new async task to handle the new connection
         tokio::spawn(async move {
@@ -82,16 +107,14 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
                         ?prover_address,
                         "Accepted prover's TLS-secured TCP connection",
                     );
-                    match notary_service(stream, &prover_address.to_string(), &notary_signing_key)
-                        .await
-                    {
-                        Ok(_) => {
-                            info!(?prover_address, "Successful notarization!");
-                        }
-                        Err(err) => {
-                            error!(?prover_address, "Failed notarization: {err}");
-                        }
-                    }
+                    // Serve different requests using the same hyper protocol and axum router
+                    let _ = protocol
+                        // Can unwrap because it's infallible
+                        .serve_connection(stream, service.await.unwrap())
+                        // use with_upgrades to upgrade connection to websocket for websocket clients
+                        // and to extract tcp connection for tcp clients
+                        .with_upgrades()
+                        .await;
                 }
                 Err(err) => {
                     error!(
@@ -103,22 +126,6 @@ pub async fn run_tcp_server(config: &NotaryServerProperties) -> Result<(), Notar
             }
         });
     }
-}
-
-/// Run the notarization
-async fn notary_service<T: AsyncWrite + AsyncRead + Send + Sync + Unpin + 'static>(
-    socket: T,
-    prover_address: &str,
-    signing_key: &SigningKey,
-) -> Result<(), NotaryServerError> {
-    debug!(?prover_address, "Starting notarization...");
-
-    // Temporarily use the prover address as the notarization session id as it is unique for each prover
-    let config = NotaryConfig::builder().id(prover_address).build()?;
-    let (notary, notary_fut) = bind_notary(config, socket.compat())?;
-
-    // Run the notary and background processes concurrently
-    tokio::try_join!(notary_fut, notary.notarize::<Signature>(signing_key),).map(|_| Ok(()))?
 }
 
 /// Temporary function to load notary signing key from static file
