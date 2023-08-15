@@ -233,7 +233,8 @@ async fn test_tcp_prover() {
         String::from_utf8_lossy(&to_bytes(response.into_body()).await.unwrap())
     );
 
-    let mut server_tls_conn = server_task.await.unwrap().unwrap();
+    let server_task = server_task.await.unwrap();
+    let mut server_tls_conn = server_task.unwrap();
 
     // Make sure the server closes cleanly (sends close notify)
     server_tls_conn.close().await.unwrap();
@@ -399,7 +400,8 @@ async fn test_websocket_prover() {
         String::from_utf8_lossy(&to_bytes(response.into_body()).await.unwrap())
     );
 
-    let mut server_tls_conn = server_task.await.unwrap().unwrap();
+    let server_task = server_task.await.unwrap();
+    let mut server_tls_conn = server_task.unwrap();
 
     // Make sure the server closes cleanly (sends close notify)
     server_tls_conn.close().await.unwrap();
