@@ -172,7 +172,7 @@ async fn test_tcp_prover() {
 
     debug!("Switched protocol OK");
 
-    // Claim back the TCP socket after HTTP exchange is done so that client can use it for notarization
+    // Reclaim the TCP socket after HTTP exchange is done so that client can use it for notarization
     let Parts {
         io: notary_tls_socket,
         ..
