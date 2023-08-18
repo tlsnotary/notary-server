@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tls_server_fixture::{bind_test_server, CA_CERT_DER, SERVER_DOMAIN};
+use tls_server_fixture::{bind_test_server_hyper, CA_CERT_DER, SERVER_DOMAIN};
 use tlsn_prover::{bind_prover, ProverConfig};
 use tokio_rustls::TlsConnector;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
@@ -180,7 +180,7 @@ async fn test_tcp_prover() {
 
     // Connect to the Server
     let (client_socket, server_socket) = tokio::io::duplex(2 << 16);
-    let server_task = tokio::spawn(bind_test_server(server_socket.compat()));
+    let server_task = tokio::spawn(bind_test_server_hyper(server_socket.compat()));
 
     let mut root_store = tls_core::anchors::RootCertStore::empty();
     root_store
@@ -349,7 +349,7 @@ async fn test_websocket_prover() {
 
     // Connect to the Server
     let (client_socket, server_socket) = tokio::io::duplex(2 << 16);
-    let server_task = tokio::spawn(bind_test_server(server_socket.compat()));
+    let server_task = tokio::spawn(bind_test_server_hyper(server_socket.compat()));
 
     let mut root_store = tls_core::anchors::RootCertStore::empty();
     root_store
