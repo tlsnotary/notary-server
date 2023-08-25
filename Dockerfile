@@ -1,11 +1,7 @@
-FROM rust:latest as builder
+FROM rust:bookworm as builder
 WORKDIR /usr/src/notary-server
 COPY . .
+RUN mkdir .cargo
+RUN echo "[net]\ngit-fetch-with-cli  = true\n" > .cargo/config.toml
 RUN cargo install --path .
-
-FROM ubuntu:latest
-WORKDIR /usr/src/notary-server
-COPY --from=builder /usr/src/notary-server/src/config/config.yaml /usr/src/notary-server/src/config/config.yaml
-COPY --from=builder /usr/src/notary-server/src/fixture /usr/src/notary-server/src/fixture
-COPY --from=builder /usr/local/cargo/bin/notary-server /usr/local/bin/notary-server
-ENTRYPOINT [ "notary-server" ]
+CMD [ "notary-server" ]
