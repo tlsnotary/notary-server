@@ -73,8 +73,8 @@ jobs:
 
   build-and-publish-image:
     name: Build and publish image
-    # Only push image if it's a tag release
-    if: startsWith(github.event.ref, 'refs/tags')
+    # Only push image if it's a v* tags push (protected tag where only admin can push)
+    if: github.event_name == 'push' && contains(github.ref, 'refs/tags/')
     # Only push image to GCR if test is successful
     needs: build_and_test
     runs-on: ubuntu-latest
