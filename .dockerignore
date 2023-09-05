@@ -1,0 +1,12 @@
+# exclude everything
+*
+
+# include source files and configurations
+!/src
+!/config
+!/fixture
+!Cargo.lock
+!Cargo.toml
+
+# include test files so that we can run test if we want during the build step in Dockerfile
+!/tests

@@ -1,10 +1,14 @@
-name: Rust
+name: ci
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+    tags:
+      - "[v]?[0-9]+.[0-9]+.[0-9]+*"
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 env:
   CARGO_TERM_COLOR: always
@@ -12,18 +16,20 @@ env:
 
 jobs:
   build_and_test:
+    name: Build and test
     if: ( ! github.event.pull_request.draft )
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Stable
+      - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2.5.0
+      - name: Use caching
+        uses: Swatinem/rust-cache@v2.5.0
 
       - name: "Build"
         run: cargo build
@@ -35,9 +41,10 @@ jobs:
     name: Rustfmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Nightly with rustfmt
+      - name: Install nightly rust toolchain with rustfmt
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
@@ -50,9 +57,10 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Stable
+      - name: Install stable rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable

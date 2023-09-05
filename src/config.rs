@@ -9,7 +9,7 @@ pub struct NotaryServerProperties {
     pub notarization: NotarizationProperties,
     /// File path of private key and certificate (in PEM format) used for establishing TLS with prover
     pub tls_signature: TLSSignatureProperties,
-    /// File path of private key (in PEM format) used to sign the notarisation
+    /// File path of private key (in PEM format) used to sign the notarization
     pub notary_signature: NotarySignatureProperties,
     /// Setting for logging/tracing
     pub tracing: TracingProperties,
@@ -27,7 +27,7 @@ pub struct NotarizationProperties {
 pub struct ServerProperties {
     /// Used for testing purpose
     pub name: String,
-    pub domain: String,
+    pub host: String,
     pub port: u16,
 }
 

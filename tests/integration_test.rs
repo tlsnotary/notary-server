@@ -27,25 +27,25 @@ use notary_server::{
     ServerProperties, TLSSignatureProperties, TracingProperties,
 };
 
-const NOTARY_CA_CERT_PATH: &str = "./src/fixture/tls/rootCA.crt";
-const NOTARY_CA_CERT_BYTES: &[u8] = include_bytes!("../src/fixture/tls/rootCA.crt");
+const NOTARY_CA_CERT_PATH: &str = "./fixture/tls/rootCA.crt";
+const NOTARY_CA_CERT_BYTES: &[u8] = include_bytes!("../fixture/tls/rootCA.crt");
 
 async fn setup_config_and_server(sleep_ms: u64, port: u16) -> NotaryServerProperties {
     let notary_config = NotaryServerProperties {
         server: ServerProperties {
             name: "tlsnotaryserver.io".to_string(),
-            domain: "127.0.0.1".to_string(),
+            host: "127.0.0.1".to_string(),
             port,
         },
         notarization: NotarizationProperties {
             max_transcript_size: 1 << 14,
         },
         tls_signature: TLSSignatureProperties {
-            private_key_pem_path: "./src/fixture/tls/notary.key".to_string(),
-            certificate_pem_path: "./src/fixture/tls/notary.crt".to_string(),
+            private_key_pem_path: "./fixture/tls/notary.key".to_string(),
+            certificate_pem_path: "./fixture/tls/notary.crt".to_string(),
         },
         notary_signature: NotarySignatureProperties {
-            private_key_pem_path: "./src/fixture/notary/notary.key".to_string(),
+            private_key_pem_path: "./fixture/notary/notary.key".to_string(),
         },
         tracing: TracingProperties {
             default_level: "DEBUG".to_string(),
@@ -90,10 +90,10 @@ async fn test_tcp_prover() {
         .with_no_client_auth();
     let notary_connector = TlsConnector::from(Arc::new(client_notary_config));
 
-    let notary_domain = notary_config.server.domain.clone();
+    let notary_host = notary_config.server.host.clone();
     let notary_port = notary_config.server.port;
     let notary_socket = tokio::net::TcpStream::connect(SocketAddr::new(
-        IpAddr::V4(notary_domain.parse().unwrap()),
+        IpAddr::V4(notary_host.parse().unwrap()),
         notary_port,
     ))
     .await
@@ -122,9 +122,9 @@ async fn test_tcp_prover() {
     })
     .unwrap();
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/session"))
+        .uri(format!("https://{notary_host}:{notary_port}/session"))
         .method("POST")
-        .header("Host", notary_domain.clone())
+        .header("Host", notary_host.clone())
         // Need to specify application/json for axum to parse it as json
         .header("Content-Type", "application/json")
         .body(Body::from(payload))
@@ -150,9 +150,9 @@ async fn test_tcp_prover() {
 
     // Send notarization request via HTTP, where the underlying TCP connection will be extracted later
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/notarize"))
+        .uri(format!("https://{notary_host}:{notary_port}/notarize"))
         .method("GET")
-        .header("Host", notary_domain)
+        .header("Host", notary_host)
         .header("Connection", "Upgrade")
         // Need to specify this upgrade header for server to extract tcp connection later
         .header("Upgrade", "TCP")
@@ -259,7 +259,7 @@ async fn test_tcp_prover() {
 async fn test_websocket_prover() {
     // Notary server configuration setup
     let notary_config = setup_config_and_server(100, 7049).await;
-    let notary_domain = notary_config.server.domain.clone();
+    let notary_host = notary_config.server.host.clone();
     let notary_port = notary_config.server.port;
 
     // Connect to the notary server via TLS-WebSocket
@@ -291,9 +291,9 @@ async fn test_websocket_prover() {
     .unwrap();
 
     let request = Request::builder()
-        .uri(format!("https://{notary_domain}:{notary_port}/session"))
+        .uri(format!("https://{notary_host}:{notary_port}/session"))
         .method("POST")
-        .header("Host", notary_domain.clone())
+        .header("Host", notary_host.clone())
         // Need to specify application/json for axum to parse it as json
         .header("Content-Type", "application/json")
         .body(Body::from(payload))
@@ -324,8 +324,8 @@ async fn test_websocket_prover() {
     // client while using its high level request function — there does not seem to have a crate that can let you
     // make a request without establishing TCP connection where you can claim the TCP connection later after making the request
     let request = http::Request::builder()
-        .uri(format!("wss://{notary_domain}:{notary_port}/notarize"))
-        .header("Host", notary_domain.clone())
+        .uri(format!("wss://{notary_host}:{notary_port}/notarize"))
+        .header("Host", notary_host.clone())
         .header("Sec-WebSocket-Key", uuid::Uuid::new_v4().to_string())
         .header("Sec-WebSocket-Version", "13")
         .header("Connection", "Upgrade")
