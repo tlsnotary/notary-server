@@ -1,4 +1,4 @@
-[![CI](https://github.com/tlsnotary/notary-server/actions/workflows/rust.yml/badge.svg)](https://github.com/tlsnotary/notary-server/actions)
+[![CI](https://github.com/tlsnotary/notary-server/actions/workflows/ci.yml/badge.svg)](https://github.com/tlsnotary/notary-server/actions)
 
 
 # notary-server
