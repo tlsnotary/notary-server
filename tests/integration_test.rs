@@ -257,10 +257,13 @@ async fn test_tcp_prover() {
 
 #[tokio::test]
 async fn test_websocket_prover() {
+    let _ = tracing_subscriber::fmt::try_init();
+
     // Notary server configuration setup
-    let notary_config = setup_config_and_server(100, 7049).await;
-    let notary_host = notary_config.server.host.clone();
-    let notary_port = notary_config.server.port;
+    let notary_host = "".to_string();
+    let max_transcript_size = 1 << 14;
+
+    debug!("Notary configuration set up!");
 
     // Connect to the notary server via TLS-WebSocket
     // Try to avoid dealing with transport layer directly to mimic the limitation of a browser extension that uses websocket
@@ -286,12 +289,12 @@ async fn test_websocket_prover() {
     // Build the HTTP request to configure notarization
     let payload = serde_json::to_string(&NotarizationSessionRequest {
         client_type: notary_server::ClientType::Websocket,
-        max_transcript_size: Some(notary_config.notarization.max_transcript_size),
+        max_transcript_size: Some(max_transcript_size),
     })
     .unwrap();
 
     let request = Request::builder()
-        .uri(format!("https://{notary_host}:{notary_port}/session"))
+        .uri(format!("https://{notary_host}/session"))
         .method("POST")
         .header("Host", notary_host.clone())
         // Need to specify application/json for axum to parse it as json
@@ -324,7 +327,7 @@ async fn test_websocket_prover() {
     // client while using its high level request function — there does not seem to have a crate that can let you
     // make a request without establishing TCP connection where you can claim the TCP connection later after making the request
     let request = http::Request::builder()
-        .uri(format!("wss://{notary_host}:{notary_port}/notarize"))
+        .uri(format!("wss://{notary_host}/notarize"))
         .header("Host", notary_host.clone())
         .header("Sec-WebSocket-Key", uuid::Uuid::new_v4().to_string())
         .header("Sec-WebSocket-Version", "13")
