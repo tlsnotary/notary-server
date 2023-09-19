@@ -1,6 +1,6 @@
 [package]
 name = "notary-server"
-version = "0.1.0"
+version = "0.1.0-alpha.1"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -27,8 +27,8 @@ serde_yaml = "0.9.21"
 sha1 = "0.10"
 structopt = "0.3.26"
 thiserror = "1"
-tlsn-notary = { git = "https://github.com/tlsnotary/tlsn", rev = "832d1ba" }
-tlsn-tls-core = { git = "https://github.com/tlsnotary/tlsn", rev = "832d1ba" }
+tlsn-notary = { git = "https://github.com/tlsnotary/tlsn", tag = "v0.1.0-alpha.1" }
+tlsn-tls-core = { git = "https://github.com/tlsnotary/tlsn", tag = "v0.1.0-alpha.1" }
 tokio = { version = "1", features = ["full"] }
 tokio-rustls = { version = "0.24.1" }
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -42,6 +42,6 @@ ws_stream_tungstenite = { version = "0.10.0", features = ["tokio_io"] }
 [dev-dependencies]
 # specify vendored feature to use statically linked copy of OpenSSL
 hyper-tls = { version = "0.5.0", features = ["vendored"] }
-tls-server-fixture = { git = "https://github.com/tlsnotary/tlsn", rev = "832d1ba" }
-tlsn-prover = { git = "https://github.com/tlsnotary/tlsn", rev = "832d1ba" }
+tls-server-fixture = { git = "https://github.com/tlsnotary/tlsn", tag = "v0.1.0-alpha.1" }
+tlsn-prover = { git = "https://github.com/tlsnotary/tlsn", tag = "v0.1.0-alpha.1" }
 tokio-native-tls = { version = "0.3.1", features = ["vendored"] }

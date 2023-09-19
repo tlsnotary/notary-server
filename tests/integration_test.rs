@@ -15,7 +15,7 @@ use std::{
     time::Duration,
 };
 use tls_server_fixture::{bind_test_server_hyper, CA_CERT_DER, SERVER_DOMAIN};
-use tlsn_prover::{bind_prover, ProverConfig};
+use tlsn_prover::{Prover, ProverConfig};
 use tokio_rustls::TlsConnector;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, TokioAsyncReadCompatExt};
 use tracing::debug;
@@ -196,16 +196,13 @@ async fn test_tcp_prover() {
         .unwrap();
 
     // Bind the Prover to the sockets
-    let (tls_connection, prover_fut, mux_fut) = bind_prover(
-        prover_config,
-        client_socket.compat(),
-        notary_tls_socket.compat(),
-    )
-    .await
-    .unwrap();
+    let prover = Prover::new(prover_config)
+        .setup(notary_tls_socket.compat())
+        .await
+        .unwrap();
+    let (tls_connection, prover_fut) = prover.connect(client_socket.compat()).await.unwrap();
 
-    // Spawn the Prover and Mux tasks to be run concurrently
-    tokio::spawn(mux_fut);
+    // Spawn the Prover task to be run concurrently
     let prover_task = tokio::spawn(prover_fut);
 
     let (mut request_sender, connection) = hyper::client::conn::handshake(tls_connection.compat())
@@ -242,13 +239,15 @@ async fn test_tcp_prover() {
 
     client_socket.close().await.unwrap();
 
-    let mut prover = prover_task.await.unwrap().unwrap();
+    let mut prover = prover_task.await.unwrap().unwrap().start_notarize();
 
     let sent_len = prover.sent_transcript().data().len();
     let recv_len = prover.recv_transcript().data().len();
 
-    prover.add_commitment_sent(0..sent_len as u32).unwrap();
-    prover.add_commitment_recv(0..recv_len as u32).unwrap();
+    let builder = prover.commitment_builder();
+
+    builder.commit_sent(0..sent_len).unwrap();
+    builder.commit_recv(0..recv_len).unwrap();
 
     _ = prover.finalize().await.unwrap();
 
@@ -365,13 +364,13 @@ async fn test_websocket_prover() {
         .unwrap();
 
     // Bind the Prover to the sockets
-    let (tls_connection, prover_fut, mux_fut) =
-        bind_prover(prover_config, client_socket.compat(), notary_ws_socket)
-            .await
-            .unwrap();
+    let prover = Prover::new(prover_config)
+        .setup(notary_ws_socket)
+        .await
+        .unwrap();
+    let (tls_connection, prover_fut) = prover.connect(client_socket.compat()).await.unwrap();
 
     // Spawn the Prover and Mux tasks to be run concurrently
-    tokio::spawn(mux_fut);
     let prover_task = tokio::spawn(prover_fut);
 
     let (mut request_sender, connection) = hyper::client::conn::handshake(tls_connection.compat())
@@ -408,13 +407,15 @@ async fn test_websocket_prover() {
 
     client_socket.close().await.unwrap();
 
-    let mut prover = prover_task.await.unwrap().unwrap();
+    let mut prover = prover_task.await.unwrap().unwrap().start_notarize();
 
     let sent_len = prover.sent_transcript().data().len();
     let recv_len = prover.recv_transcript().data().len();
 
-    prover.add_commitment_sent(0..sent_len as u32).unwrap();
-    prover.add_commitment_recv(0..recv_len as u32).unwrap();
+    let builder = prover.commitment_builder();
+
+    builder.commit_sent(0..sent_len).unwrap();
+    builder.commit_recv(0..recv_len).unwrap();
 
     _ = prover.finalize().await.unwrap();
 
