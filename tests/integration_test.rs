@@ -421,3 +421,100 @@ async fn test_websocket_prover() {
 
     debug!("Done notarization!");
 }
+
+#[tokio::test]
+async fn test_websocket_prover_session_id_in_uri() {
+    // This test is copied from `test_websocket_prover` except that the session id
+    // is passed in the URI instead of the header
+
+    // Notary server configuration setup
+    let notary_config = setup_config_and_server(100, 7049).await;
+    let notary_host = notary_config.server.host.clone();
+    let notary_port = notary_config.server.port;
+
+    // Connect to the notary server via TLS-WebSocket
+    // Try to avoid dealing with transport layer directly to mimic the limitation of a browser extension that uses websocket
+    //
+    // Establish TLS setup for connections later
+    let certificate =
+        tokio_native_tls::native_tls::Certificate::from_pem(NOTARY_CA_CERT_BYTES).unwrap();
+    let notary_tls_connector = tokio_native_tls::native_tls::TlsConnector::builder()
+        .add_root_certificate(certificate)
+        .use_sni(false)
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap();
+
+    // Call the /session HTTP API to configure notarization and obtain session id
+    let mut hyper_http_connector = HttpConnector::new();
+    hyper_http_connector.enforce_http(false);
+    let mut hyper_tls_connector =
+        HttpsConnector::from((hyper_http_connector, notary_tls_connector.clone().into()));
+    hyper_tls_connector.https_only(true);
+    let https_client = Client::builder().build::<_, hyper::Body>(hyper_tls_connector);
+
+    // Build the HTTP request to configure notarization
+    let payload = serde_json::to_string(&NotarizationSessionRequest {
+        client_type: notary_server::ClientType::Websocket,
+        max_transcript_size: Some(notary_config.notarization.max_transcript_size),
+    })
+    .unwrap();
+
+    let request = Request::builder()
+        .uri(format!("https://{notary_host}:{notary_port}/session"))
+        .method("POST")
+        .header("Host", notary_host.clone())
+        // Need to specify application/json for axum to parse it as json
+        .header("Content-Type", "application/json")
+        .body(Body::from(payload))
+        .unwrap();
+
+    debug!("Sending request");
+
+    let response = https_client.request(request).await.unwrap();
+
+    debug!("Sent request");
+
+    assert!(response.status() == StatusCode::OK);
+
+    debug!("Response OK");
+
+    // Pretty printing :)
+    let payload = to_bytes(response.into_body()).await.unwrap().to_vec();
+    let notarization_response =
+        serde_json::from_str::<NotarizationSessionResponse>(&String::from_utf8_lossy(&payload))
+            .unwrap();
+
+    debug!("Notarization response: {:?}", notarization_response,);
+
+    // Connect to the Notary via TLS-Websocket
+    //
+    // Note: This will establish a new TLS-TCP connection instead of reusing the previous TCP connection
+    // used in the previous HTTP POST request because we cannot claim back the tcp connection used in hyper
+    // client while using its high level request function — there does not seem to have a crate that can let you
+    // make a request without establishing TCP connection where you can claim the TCP connection later after making the request
+    let request = http::Request::builder()
+        // Note that the session id is passed in the URI instead of the header
+        .uri(format!(
+            "wss://{}:{}/notarize?sessionId={}",
+            notary_host,
+            notary_port,
+            notarization_response.session_id.clone()
+        ))
+        .header("Host", notary_host.clone())
+        .header("Sec-WebSocket-Key", uuid::Uuid::new_v4().to_string())
+        .header("Sec-WebSocket-Version", "13")
+        .header("Connection", "Upgrade")
+        .header("Upgrade", "Websocket")
+        .body(())
+        .unwrap();
+
+    // If Websocket connection fails it will panic here
+    connect_async_with_tls_connector_and_config(
+        request,
+        Some(notary_tls_connector.into()),
+        Some(WebSocketConfig::default()),
+    )
+    .await
+    .unwrap();
+}
