@@ -26,9 +26,9 @@ pub struct NotarizationSessionRequest {
 /// Request object of the /notarize API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct NotarizationNotarizeRequest {
+pub struct NotarizationRequestQuery {
     /// Session id that is returned from /session API
-    pub session_id: Option<String>,
+    pub session_id: String,
 }
 
 /// Types of client that the prover is using
