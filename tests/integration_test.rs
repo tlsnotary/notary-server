@@ -153,7 +153,7 @@ async fn test_tcp_prover() {
         // Need to specify the session_id so that notary server knows the right configuration to use
         // as the configuration is set in the previous HTTP call
         .uri(format!(
-            "wss://{}:{}/notarize?sessionId={}",
+            "https://{}:{}/notarize?sessionId={}",
             notary_host,
             notary_port,
             notarization_response.session_id.clone()
