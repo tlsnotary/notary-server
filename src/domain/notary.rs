@@ -23,7 +23,7 @@ pub struct NotarizationSessionRequest {
     pub max_transcript_size: Option<usize>,
 }
 
-/// Request object of the /notarize API
+/// Request query of the /notarize API
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotarizationRequestQuery {
