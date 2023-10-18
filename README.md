@@ -9,6 +9,10 @@ An implementation of the notary server in Rust.
 
 This project has been **MIGRATED** into the [tlsn repository](https://github.com/tlsnotary/tlsn/tree/8783a62ea104ee7f5f1591f1dc51d1785128d8b8/notary-server), please continue using this project there instead.
 
+## ⚠️ Notice
+
+This project is currently under active development and should not be used in production. Expect bugs and regular major breaking changes.
+
 ---
 ## Running the server
 ### Using Cargo
